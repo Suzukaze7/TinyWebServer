@@ -1,4 +1,6 @@
+#include "webserver/webserver.h"
 #include "thread_pool/thread_pool.hpp"
+#include <iostream>
 
 using namespace std::literals::chrono_literals;
 
@@ -15,9 +17,13 @@ void test_thread_pool() {
 }
 
 void test_http_conn() {
-    
+}
+
+void test_webserver() {
+    suzukaze::WebServer server;
+    server.start_server();
 }
 
 int main() {
-    test_http_conn();
+    test_webserver();
 }

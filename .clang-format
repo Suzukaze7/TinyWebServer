@@ -1,0 +1,9 @@
+AccessModifierOffset: -4
+AlignEscapedNewlines: Left
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+ColumnLimit: 100
+IncludeBlocks: Merge
+IndentWidth: 4
+TabWidth: 4
+UseCRLF: true
