@@ -2,6 +2,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <mutex>
@@ -11,7 +12,7 @@
 #include <vector>
 
 namespace suzukaze {
-template <typename Func = std::packaged_task<void()>>
+template <typename Func = std::function<void()>>
 class ThreadPool {
 public:
     ThreadPool(std::size_t thread_count = std::thread::hardware_concurrency(),
@@ -69,5 +70,6 @@ inline void ThreadPool<Func>::submit(Func task) {
     std::unique_lock guard(lock);
     support_cv.wait(guard, [&] { return q.size() < MAX_QUEUE_SIZE; });
     q.push(std::move(task));
+    consume_cv.notify_one();
 }
 } // namespace suzukaze

@@ -29,3 +29,57 @@ fcntl(fd, F_SETFL, new_option);
 ```
 
 并且只能设置非阻塞
+
+## wsl 配置git代理
+
+开启[镜像模式](https://learn.microsoft.com/zh-cn/windows/wsl/networking#mirrored-mode-networking)
+
+## 手动编译 gcc 源码
+
+1. 源码下载[地址](https://ftp.gnu.org/gnu/gcc/)
+2. 解压缩
+
+    ```sh
+    tar -zxf xxx
+    ```
+
+3. 以下称源文件目录为 `src`，build 目录为 `build`，安装目录为 `bin`，官方推荐三个文件都没有嵌套
+4. 按步骤编译
+
+    ```sh
+    # 下载需要的库
+    cd src
+    ./contrib/download_prerequisites
+    
+    # 配置编译选项
+    cd dst
+    src/configure --prefix=bin --enable-threads=posix --disable-checking --enable--long-long --with-system-zlib --enable-languages=c,c++ --disable-multilib
+
+    # 编译
+    make -j$nproc
+
+    # 安装
+    sudo make install
+    ```
+
+    tips:
+    - 一定要先下载需要的库再配置，否则必须删除 `build` 里的文件再重新操作
+    - 编译时出现 `g++: fatal error: Killed signal terminated program cc1plus`，是因为内存和 swap 分区空间不够
+
+        wsl 设置内存和 swap 分区大小，在 `.wslconfig` 中
+
+        ```
+        [wsl2]
+        memory=xxx
+        swap=xxx
+        ```
+
+5. Linux 使用手动编译的高版本 `gcc` 编译程序运行后报错 
+
+    ```
+    /lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
+    ```
+
+    是因为 `gcc` 默认会去 `/lib, /usr/lib` 下找动态链接库，而系统又缺少高版本 `gcc` 所需的库
+
+    解决办法，`gcc` 会优先去 `LD_LIBRARY_PATH` 环境变量存的路径去找库，所以在 `.bashrc` 中加上 `export LD_LIBRARY_PATH=xxx` 即可

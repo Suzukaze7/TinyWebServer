@@ -1,12 +1,12 @@
 CC := g++
 CFLAGS := -std=c++2a
 SRC := webserver/webserver.cpp exception/exception.cpp http_conn/http_conn.cpp
+NSRC := ${SRC} thread_pool/thread_pool.hpp
 
 SSRC := ${SRC} main.cpp
-server: SSRC
+server: ${NSRC}
 	${CC} ${CFLAGS} ${SSRC} -o server
 
 TSRC := ${SRC} test.cpp
-CFLAGS += -include debug.hpp
-test: ${TSRC}
+test: ${NSRC}
 	${CC} ${CFLAGS} ${TSRC} -o test

@@ -1,8 +1,10 @@
 #include "webserver.h"
 #include "../exception/exception.h"
+#include "../type/type.h"
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <fcntl.h>
 #include <iostream>
@@ -13,6 +15,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <random>
 
 namespace suzukaze {
 WebServer::~WebServer() {
@@ -24,10 +27,7 @@ auto WebServer::error() -> std::string { return strerror(errno); }
 
 void WebServer::add_fd(fd_t fd, bool in, bool one_shot) {
     epoll_event event;
-    if (in)
-        event.events = EPOLLIN | EPOLLET;
-    else
-        event.events = EPOLLOUT | EPOLLET;
+    event.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET;
     if (one_shot)
         event.events |= EPOLLONESHOT;
     event.data.fd = fd;
@@ -36,21 +36,21 @@ void WebServer::add_fd(fd_t fd, bool in, bool one_shot) {
         throw SocketException("WebServer::add_fd epoll_ctl", error());
 }
 
+void WebServer::mod_fd(fd_t fd, bool in) {
+    epoll_event event;
+    event.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET | EPOLLONESHOT;
+    event.data.fd = fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event))
+        throw SocketException("WebServer::mod_fd epoll_ctl", error());
+}
+
+void WebServer::del_fd(fd_t fd) { epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr); }
+
 void WebServer::set_nonblock(fd_t fd) {
     int old_option = fcntl(fd, F_GETFL);
     int new_option = old_option | O_NONBLOCK;
     fcntl(fd, F_SETFL, new_option);
-}
-
-auto WebServer::read(fd_t fd) -> std::string {
-    static constexpr std::size_t LEN = 1500;
-    static char buf[LEN];
-
-    std::string res;
-    int cnt;
-    while ((cnt = ::read(fd, buf, LEN)) > 0)
-        res += buf, debug(cnt);
-    return res;
 }
 
 void WebServer::create_listen() {
@@ -59,7 +59,13 @@ void WebServer::create_listen() {
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
     err_t err;
-    if ((err = getaddrinfo(nullptr, "8080", &hint, &result)))
+
+    std::default_random_engine e(time(nullptr));
+    std::uniform_int_distribution<> d(1025, 65535);
+    std::string port = std::to_string(d(e));
+    logger.info("listen localhost:{}", port);
+
+    if ((err = getaddrinfo(nullptr, port.c_str(), &hint, &result)))
         throw SocketException("WebServer::create_listen getaddrinfo", gai_strerror(err));
 
     if ((listen_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
@@ -76,7 +82,14 @@ void WebServer::create_listen() {
 
 void WebServer::accept() {
     fd_t fd;
-    while ((fd = ::accept(listen_fd, nullptr, nullptr)) != -1) {
+    sockaddr_in sa;
+    socklen_t salen = sizeof sa;
+    while ((fd = ::accept(listen_fd, reinterpret_cast<sockaddr *>(&sa), &salen)) != -1) {
+        constexpr size_t LEN = 20;
+        char host[LEN], serv[LEN];
+        getnameinfo(reinterpret_cast<sockaddr *>(&sa), salen, host, LEN, serv, LEN, NI_NUMERICHOST | NI_NUMERICSERV);
+        logger.info("accept {}:{} fd: {}", host, serv, fd);
+
         set_nonblock(fd);
         add_fd(fd, true, true);
     }
@@ -85,16 +98,42 @@ void WebServer::accept() {
 void WebServer::exec_cmd() {
     std::string cmd;
     std::getline(std::cin, cmd);
-    if (cmd.size())
+    if (cmd == "stop")
+        std::exit(0);
+    else if (cmd.size())
         std::cout << cmd << std::endl;
 }
 
-void WebServer::receive(fd_t fd) {}
+void WebServer::receive(fd_t fd) {
+    logger.info("receive fd: {}", fd);
+
+    while (conn.size() <= fd)
+        conn.emplace_back(conn.size());
+    if (conn[fd].receive()) {
+        pool.submit([&] {
+            if (conn[fd].parse_request()) {
+                conn[fd].process();
+                mod_fd(fd, false);
+            } else
+                mod_fd(fd, true);
+        });
+    } else
+        mod_fd(fd, true);
+}
+
+void WebServer::send(fd_t fd) {
+    logger.info("send fd: {}", fd);
+
+    if (conn[fd].send()) {
+        logger.info("close {}", fd);
+        del_fd(fd);
+        close(fd);
+    }
+}
 
 void WebServer::start_server() {
-    create_listen();
-
     epoll_fd = epoll_create(EVENT_COUNT);
+    create_listen();
     add_fd(listen_fd, true, false);
     add_fd(STDIN_FILENO, true, false);
 
@@ -108,8 +147,12 @@ void WebServer::start_server() {
                 accept();
             else if (fd == STDIN_FILENO)
                 exec_cmd();
+            else if (event & EPOLLHUP)
+                del_fd(fd);
             else if (event & EPOLLIN) {
                 receive(fd);
+            } else if (event & EPOLLOUT) {
+                send(fd);
             }
         }
     }
