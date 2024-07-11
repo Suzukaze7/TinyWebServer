@@ -18,19 +18,16 @@ class WebServer {
 
     ThreadPool<> pool;
     std::vector<HttpConn> conn;
-    Logger logger;
 
-    auto error() -> std::string;
     void add_fd(fd_t fd, bool in, bool one_shot);
     void mod_fd(fd_t fd, bool in);
-    void del_fd(fd_t fd);
     void set_nonblock(fd_t fd);
-    auto read(fd_t fd) -> std::string;
     void create_listen();
     void exec_cmd();
-    void accept();
-    void receive(fd_t fd);
-    void send(fd_t fd);
+    void accept_conn();
+    void receive_msg(fd_t fd);
+    void close_conn(fd_t fd);
+    void send_msg(fd_t fd);
 
 public:
     ~WebServer();
