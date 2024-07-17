@@ -1,13 +1,23 @@
 CC := g++
 CFLAGS := -std=c++2a
-SRC := webserver/webserver.cpp http_conn/http_conn.cpp exception/exception.cpp utils/utils.cpp
-NSRC := ${SRC} thread_pool/thread_pool.hpp logger/logger.hpp type/type.h
+SRC := $(wildcard src/*.cpp)
+OBJS = $(SRC:%.cpp=%.o)
+INCL := $(wildcard src/include/*)
 
-server: ${NSRC} main.cpp
-	${CC} ${CFLAGS} ${SRC} main.cpp -o server
+TSRC := $(SRC) main.cpp test.cpp
+$(TSRC:%.cpp=%.o): %.o: %.cpp
+	$(CC) $(CFLAGS) -c $< -o $@
 
-test: ${NSRC} test.cpp
-	${CC} ${CFLAGS} ${SRC} test.cpp -o test
+server: $(OBJS) main.o
+	$(CC) $(OBJS) main.o -o server
+
+test: $(OBJS) test.o
+	$(CC) $(OBJS) test.o -o test
 
 trun: test
 	./test
+
+.PHONY: clean
+
+clean:
+	rm -f *.o src/*.o server test

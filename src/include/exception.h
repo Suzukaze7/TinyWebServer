@@ -1,3 +1,4 @@
+#pragma once
 #include <exception>
 #include <string>
 
@@ -6,7 +7,7 @@ class SocketException : public std::exception {
     std::string msg;
 
 public:
-    SocketException() = default;
+    SocketException() noexcept(noexcept(std::string())) = default;
     SocketException(std::string msg) noexcept;
     SocketException(std::string addr, std::string msg);
 

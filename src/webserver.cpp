@@ -1,28 +1,20 @@
-#include "webserver.h"
-#include "../exception/exception.h"
-#include "../type/type.h"
-#include "../utils/utils.h"
+#include "include/webserver.h"
+#include "include/exception.h"
+#include "include/http_conn.h"
+#include "include/type.h"
+#include "include/utils.h"
 #include <algorithm>
-#include <cstddef>
-#include <cstring>
-#include <ctime>
+#include <charconv>
 #include <fcntl.h>
 #include <iostream>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <random>
 #include <string>
-#include <string_view>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace suzukaze {
-WebServer::~WebServer() {
-    close(listen_fd);
-    close(epoll_fd);
-}
-
 void WebServer::add_fd(fd_t fd, bool in, bool one_shot) {
     epoll_event event;
     event.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET;
@@ -55,13 +47,7 @@ void WebServer::create_listen() {
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
     err_t err;
-
-    std::default_random_engine e(time(nullptr));
-    std::uniform_int_distribution<> d(1025, 65535);
-    std::string port = std::to_string(d(e));
-    Logger::info("listen localhost:{}", port);
-
-    if ((err = getaddrinfo(nullptr, port.c_str(), &hint, &result)))
+    if ((err = getaddrinfo(nullptr, std::to_string(port).c_str(), &hint, &result)))
         throw SocketException("WebServer::create_listen getaddrinfo", gai_strerror(err));
 
     if ((listen_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
@@ -81,7 +67,7 @@ void WebServer::accept_conn() {
     sockaddr_in sa;
     socklen_t salen = sizeof sa;
     while ((fd = ::accept(listen_fd, reinterpret_cast<sockaddr *>(&sa), &salen)) != -1) {
-        constexpr size_t LEN = 20;
+        constexpr std::size_t LEN = 20;
         char host[LEN], serv[LEN];
         getnameinfo(reinterpret_cast<sockaddr *>(&sa), salen, host, LEN, serv, LEN,
                     NI_NUMERICHOST | NI_NUMERICSERV);
@@ -95,6 +81,8 @@ void WebServer::accept_conn() {
 }
 
 void WebServer::close_conn(fd_t fd) {
+    Logger::debug("close {}", fd);
+
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
     conn[fd].~HttpConn();
@@ -110,15 +98,15 @@ void WebServer::exec_cmd() {
 }
 
 void WebServer::receive_msg(fd_t fd) {
-    Logger::info("receive fd: {}", fd);
+    Logger::debug("receive fd: {}", fd);
 
     conn[fd].receive_msg();
-    pool.submit([&] {
-        auto status_code = conn[fd].parse_request();
-        if (status_code == StatusCode::NOT_FINISH)
+    pool->submit([&] {
+        auto parse_status = conn[fd].parse_request();
+        if (parse_status == ParseStatus::NOT_FINISH)
             mod_fd(fd, true);
         else {
-            conn[fd].process();
+            conn[fd].process(parse_status);
             mod_fd(fd, false);
         }
     });
@@ -127,11 +115,18 @@ void WebServer::receive_msg(fd_t fd) {
 void WebServer::send_msg(fd_t fd) {
     Logger::debug("send fd: {}", fd);
 
-    if (conn[fd].send_msg()) {
-        Logger::debug("close {}", fd);
-        close_conn(fd);
-    } else
+    switch (conn[fd].send_msg()) {
+    case SendStatus::NOT_FINISH:
         mod_fd(fd, false);
+        break;
+    case SendStatus::CLOSE:
+        close_conn(fd);
+        break;
+    case SendStatus::KEEP_ALIVE:
+        conn[fd].~HttpConn();
+        mod_fd(fd, true);
+        break;
+    }
 }
 
 void WebServer::start_server() {
@@ -140,9 +135,11 @@ void WebServer::start_server() {
     add_fd(listen_fd, true, false);
     add_fd(STDIN_FILENO, true, false);
 
+    Logger::info("listen {}:{}", ip, port);
+
     while (true) {
-        size_t cnt = epoll_wait(epoll_fd, events, EVENT_COUNT, -1);
-        for (size_t i = 0; i < cnt; i++) {
+        ssize_t cnt = epoll_wait(epoll_fd, events.get(), EVENT_COUNT, -1);
+        for (ssize_t i = 0; i < cnt; i++) {
             uint32_t event = events[i].events;
             fd_t fd = events[i].data.fd;
 
@@ -152,11 +149,10 @@ void WebServer::start_server() {
                 exec_cmd();
             else if (event & EPOLLHUP)
                 close_conn(fd);
-            else if (event & EPOLLIN) {
+            else if (event & EPOLLIN)
                 receive_msg(fd);
-            } else if (event & EPOLLOUT) {
+            else if (event & EPOLLOUT)
                 send_msg(fd);
-            }
         }
     }
 }

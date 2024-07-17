@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <concepts>
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
@@ -12,7 +13,10 @@
 #include <vector>
 
 namespace suzukaze {
-template <typename Func = std::function<void()>>
+template<typename T>
+concept Task = std::invocable<T> && std::copyable<T>;
+
+template <Task T = std::function<void()>>
 class ThreadPool {
 public:
     ThreadPool(std::size_t thread_count = std::thread::hardware_concurrency(),
@@ -24,7 +28,7 @@ private:
     const std::size_t THREAD_COUNT;
     const std::size_t MAX_QUEUE_SIZE;
     std::atomic_bool done;
-    std::queue<Func> q;
+    std::queue<T> q;
     std::vector<std::jthread> threads;
     std::mutex lock;
     std::condition_variable consume_cv, support_cv;
@@ -32,24 +36,24 @@ private:
     void work();
 
 public:
-    void submit(Func task);
+    void submit(T task);
 };
 
-template <typename Func>
-inline ThreadPool<Func>::ThreadPool(std::size_t thread_count, std::size_t max_queue_size)
+template <Task T>
+inline ThreadPool<T>::ThreadPool(std::size_t thread_count, std::size_t max_queue_size)
     : THREAD_COUNT(thread_count), MAX_QUEUE_SIZE(max_queue_size) {
     for (std::size_t i = 0; i < THREAD_COUNT; i++)
         threads.emplace_back(&ThreadPool::work, this);
 }
 
-template <typename Func>
-inline ThreadPool<Func>::~ThreadPool() {
+template <Task T>
+inline ThreadPool<T>::~ThreadPool() {
     done = true;
     consume_cv.notify_all();
 }
 
-template <typename Func>
-inline void ThreadPool<Func>::work() {
+template <Task T>
+inline void ThreadPool<T>::work() {
     while (!done) {
         std::unique_lock guard(lock);
         consume_cv.wait(guard, [&] { return !q.empty() || done; });
@@ -65,8 +69,8 @@ inline void ThreadPool<Func>::work() {
     }
 }
 
-template <typename Func>
-inline void ThreadPool<Func>::submit(Func task) {
+template <Task T>
+inline void ThreadPool<T>::submit(T task) {
     std::unique_lock guard(lock);
     support_cv.wait(guard, [&] { return q.size() < MAX_QUEUE_SIZE; });
     q.push(std::move(task));

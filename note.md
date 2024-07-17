@@ -83,3 +83,15 @@ fcntl(fd, F_SETFL, new_option);
     是因为 `gcc` 默认会去 `/lib, /usr/lib` 下找动态链接库，而系统又缺少高版本 `gcc` 所需的库
 
     解决办法，`gcc` 会优先去 `LD_LIBRARY_PATH` 环境变量存的路径去找库，所以在 `.bashrc` 中加上 `export LD_LIBRARY_PATH=xxx` 即可
+
+## HTTP 请求报文
+
+#### 请求头
+
+- `Content-Length`： 指明请求体大小
+- `Transfer-Encoding`： 指明将请求体传递的编码形式
+
+#### 判断报文结束：
+
+- 服务器端：`Content-Length` 指明，或是 `Transfer-Encoding: chunked` 指明按块传输
+- 浏览器端：除了服务器端的方式，还有直接断开 `tcp` 连接
