@@ -3,5 +3,5 @@
 #include "include/utils.h"
 
 namespace suzukaze {
-auto error() -> std::string { return strerror(errno); }
+auto error() noexcept -> std::string { return strerror(errno); }
 } // namespace suzukaze

@@ -9,26 +9,25 @@ namespace suzukaze {
 enum class Level { DEBUG, INFO, WARNING, ERROR, CRITICAL };
 
 class Logger {
-
 private:
-    inline static Level level = Level::DEBUG;
+    Level level_;
 
 public:
-    inline static void config(Level l) { level = l; }
+    inline Logger(Level l = Level::DEBUG) noexcept : level_(l) {}
 
     template <typename... Args>
-    inline static void log(Level l, std::format_string<Args...> fmt, Args &&...args) {
+    inline void log(Level l, std::format_string<Args...> fmt, Args &&...args) noexcept {
         auto s = std::format(fmt, std::forward<Args>(args)...);
         std::cout << s << std::endl;
     }
 
     template <typename... Args>
-    inline static void debug(std::format_string<Args...> fmt, Args &&...args) {
+    inline void debug(std::format_string<Args...> fmt, Args &&...args) noexcept {
         log(Level::DEBUG, std::move(fmt), std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    inline static void info(std::format_string<Args...> fmt, Args &&...args) {
+    inline void info(std::format_string<Args...> fmt, Args &&...args) noexcept {
         log(Level::INFO, std::move(fmt), std::forward<Args>(args)...);
     }
 };

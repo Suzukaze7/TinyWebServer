@@ -25,13 +25,13 @@ public:
     ~ThreadPool();
 
 private:
-    const std::size_t THREAD_COUNT;
-    const std::size_t MAX_QUEUE_SIZE;
-    std::atomic_bool done;
-    std::queue<T> q;
-    std::vector<std::jthread> threads;
-    std::mutex lock;
-    std::condition_variable consume_cv, support_cv;
+    const std::size_t THREAD_COUNT_;
+    const std::size_t MAX_QUEUE_SIZE_;
+    std::atomic_bool done_;
+    std::queue<T> que_;
+    std::vector<std::jthread> threads_;
+    std::mutex lock_;
+    std::condition_variable consume_cv_, support_cv_;
 
     void work();
 
@@ -41,39 +41,39 @@ public:
 
 template <Task T>
 inline ThreadPool<T>::ThreadPool(std::size_t thread_count, std::size_t max_queue_size)
-    : THREAD_COUNT(thread_count), MAX_QUEUE_SIZE(max_queue_size) {
-    for (std::size_t i = 0; i < THREAD_COUNT; i++)
-        threads.emplace_back(&ThreadPool::work, this);
+    : THREAD_COUNT_(thread_count), MAX_QUEUE_SIZE_(max_queue_size) {
+    for (std::size_t i = 0; i < THREAD_COUNT_; i++)
+        threads_.emplace_back(&ThreadPool::work, this);
 }
 
 template <Task T>
 inline ThreadPool<T>::~ThreadPool() {
-    done = true;
-    consume_cv.notify_all();
+    done_ = true;
+    consume_cv_.notify_all();
 }
 
 template <Task T>
 inline void ThreadPool<T>::work() {
-    while (!done) {
-        std::unique_lock guard(lock);
-        consume_cv.wait(guard, [&] { return !q.empty() || done; });
+    while (!done_) {
+        std::unique_lock guard(lock_);
+        consume_cv_.wait(guard, [&] { return !que_.empty() || done_; });
 
-        if (done)
+        if (done_)
             break;
 
-        auto task = std::move(q.front());
-        q.pop();
+        auto task = std::move(que_.front());
+        que_.pop();
         guard.unlock();
-        support_cv.notify_one();
+        support_cv_.notify_one();
         task();
     }
 }
 
 template <Task T>
 inline void ThreadPool<T>::submit(T task) {
-    std::unique_lock guard(lock);
-    support_cv.wait(guard, [&] { return q.size() < MAX_QUEUE_SIZE; });
-    q.push(std::move(task));
-    consume_cv.notify_one();
+    std::unique_lock guard(lock_);
+    support_cv_.wait(guard, [&] { return que_.size() < MAX_QUEUE_SIZE_; });
+    que_.push(std::move(task));
+    consume_cv_.notify_one();
 }
 } // namespace suzukaze

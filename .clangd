@@ -1,0 +1,5 @@
+Diagnostics:
+  ClangTidy:
+    Add: [readability-identifier-naming]
+    CheckOptions:
+      readability-identifier-naming.MemberSuffix: _

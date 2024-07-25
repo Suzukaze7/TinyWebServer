@@ -1,5 +1,5 @@
 CC := g++
-CFLAGS := -std=c++2a
+CFLAGS := -std=c++2a -g
 SRC := $(wildcard src/*.cpp)
 OBJS = $(SRC:%.cpp=%.o)
 INCL := $(wildcard src/include/*)

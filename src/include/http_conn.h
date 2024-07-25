@@ -1,39 +1,46 @@
 #pragma once
+#include "http_request.h"
+#include "http_response.h"
+#include "logger.hpp"
+#include "router.h"
 #include "type.h"
-#include <map>
+#include <bits/types/struct_iovec.h>
 #include <string>
+#include <type_traits>
+#include <unistd.h>
 
 namespace suzukaze {
-enum class ParseStep { REQUEST_LINE, HEADER, BODY };
-enum class ParseStatus { NOT_FINISH, FINISH, OK, BAD_REQUEST, INTERAL_ERROR };
+enum class ParseStatus { CONTINUE, NOT_FINISH, FINISH };
 enum class SendStatus { NOT_FINISH, CLOSE, KEEP_ALIVE };
 
 class HttpConn {
-    static constexpr std::size_t LEN = 1500;
-    static inline char buf[LEN];
+    static inline Logger logger;
+    static inline Router &router = Router::get_instance();
 
-    const fd_t FD = -1;
-    std::size_t idx = 0;
-    ParseStep parse_step = ParseStep::REQUEST_LINE;
-    std::string msg, line;
-    std::string method, url, ver;
-    bool keep_alive;
-    std::size_t content_length = 0;
-    std::string body;
-    std::map<std::string, std::string> request;
+    const fd_t CONN_FD_ = -1;
+    RequestInfo req_;
+    ResponseInfo resp_;
 
-    auto getline() -> bool;
-    auto parse_request_line() -> ParseStatus;
-    auto parse_header() -> ParseStatus;
-    auto parse_body() -> ParseStatus;
+    auto getline() noexcept -> bool;
+    auto parse_request_line() noexcept -> ParseStatus;
+    auto parse_header() noexcept -> ParseStatus;
+    auto parse_body() noexcept -> ParseStatus;
+    void process_body() noexcept;
+    void process_status_line() noexcept;
+    void process_header() noexcept;
 
 public:
-    HttpConn() = default;
-    inline HttpConn(fd_t fd) : FD(fd){};
+    HttpConn() noexcept = default;
+    HttpConn(fd_t fd) noexcept : CONN_FD_(fd) {}
 
-    void receive_msg();
-    auto parse_request() -> ParseStatus;
-    void process(ParseStatus http_code);
-    auto send_msg() -> SendStatus;
+    ~HttpConn() {
+        if (resp_.is_file_)
+            close(resp_.file_fd_);
+    }
+
+    auto receive() -> bool;
+    auto parse_request() noexcept -> ParseStatus;
+    void process() noexcept;
+    auto send() -> SendStatus;
 };
 } // namespace suzukaze

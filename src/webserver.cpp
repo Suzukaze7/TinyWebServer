@@ -3,18 +3,29 @@
 #include "include/http_conn.h"
 #include "include/type.h"
 #include "include/utils.h"
-#include <algorithm>
-#include <charconv>
+#include <bitset>
 #include <fcntl.h>
 #include <iostream>
+#include <memory>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <string>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace suzukaze {
+void WebServer::add(RequestMethod type, std::string_view url, Handler handler) {
+    router_.add_handler(type, url, std::move(handler));
+}
+
+void WebServer::get(std::string_view url, Handler handler) {
+    add(RequestMethod::GET, url, std::move(handler));
+}
+
+void WebServer::post(std::string_view url, Handler handler) {
+    add(RequestMethod::POST, url, std::move(handler));
+}
+
 void WebServer::add_fd(fd_t fd, bool in, bool one_shot) {
     epoll_event event;
     event.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET;
@@ -22,7 +33,7 @@ void WebServer::add_fd(fd_t fd, bool in, bool one_shot) {
         event.events |= EPOLLONESHOT;
     event.data.fd = fd;
 
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event))
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event))
         throw SocketException("WebServer::add_fd epoll_ctl", error());
 }
 
@@ -31,7 +42,7 @@ void WebServer::mod_fd(fd_t fd, bool in) {
     event.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET | EPOLLONESHOT;
     event.data.fd = fd;
 
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event))
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &event))
         throw SocketException("WebServer::mod_fd epoll_ctl", error());
 }
 
@@ -47,45 +58,51 @@ void WebServer::create_listen() {
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
     err_t err;
-    if ((err = getaddrinfo(nullptr, std::to_string(port).c_str(), &hint, &result)))
+    if ((err = getaddrinfo(nullptr, std::to_string(port_).c_str(), &hint, &result)))
         throw SocketException("WebServer::create_listen getaddrinfo", gai_strerror(err));
 
-    if ((listen_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
+    if ((listen_fd_ = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
         throw SocketException("WebServer::create_listen socket", error());
 
-    if (bind(listen_fd, result->ai_addr, result->ai_addrlen) == -1)
+    if (bind(listen_fd_, result->ai_addr, result->ai_addrlen) == -1)
         throw SocketException("WebServer::create_listen bind", error());
 
-    if (listen(listen_fd, 1024) == -1)
+    if (listen(listen_fd_, 1024) == -1)
         throw SocketException("WebServer::create_listen listen", error());
 
-    set_nonblock(listen_fd);
+    set_nonblock(listen_fd_);
 }
 
 void WebServer::accept_conn() {
     fd_t fd;
     sockaddr_in sa;
     socklen_t salen = sizeof sa;
-    while ((fd = ::accept(listen_fd, reinterpret_cast<sockaddr *>(&sa), &salen)) != -1) {
+    while ((fd = ::accept(listen_fd_, reinterpret_cast<sockaddr *>(&sa), &salen)) != -1) {
         constexpr std::size_t LEN = 20;
         char host[LEN], serv[LEN];
         getnameinfo(reinterpret_cast<sockaddr *>(&sa), salen, host, LEN, serv, LEN,
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        Logger::info("accept {}:{} fd: {}", host, serv, fd);
+        logger_.info("accept {}:{} fd: {}", host, serv, fd);
 
-        conn.resize(std::max(conn.size(), static_cast<std::size_t>(fd) + 1));
-        (void)new (&conn[fd]) HttpConn{fd};
+        while (fd + 1 > conn_.size())
+            conn_.push_back(std::make_unique<HttpConn>(conn_.size()));
+
         set_nonblock(fd);
         add_fd(fd, true, true);
     }
 }
 
-void WebServer::close_conn(fd_t fd) {
-    Logger::debug("close {}", fd);
+void WebServer::reset_conn(fd_t fd) {
+    conn_[fd]->~HttpConn();
+    new (conn_[fd].get()) HttpConn(fd);
+}
 
-    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+void WebServer::close_conn(fd_t fd) {
+    logger_.debug("close fd: {}", fd);
+
+    epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
-    conn[fd].~HttpConn();
+    reset_conn(fd);
 }
 
 void WebServer::exec_cmd() {
@@ -98,24 +115,27 @@ void WebServer::exec_cmd() {
 }
 
 void WebServer::receive_msg(fd_t fd) {
-    Logger::debug("receive fd: {}", fd);
+    logger_.debug("receive fd: {}", fd);
 
-    conn[fd].receive_msg();
-    pool->submit([&] {
-        auto parse_status = conn[fd].parse_request();
-        if (parse_status == ParseStatus::NOT_FINISH)
+    if (conn_[fd]->receive()) {
+        close_conn(fd);
+        return;
+    }
+
+    pool_->submit([fd, this, &conn = *conn_[fd]] {
+        if (conn.parse_request() == ParseStatus::NOT_FINISH)
             mod_fd(fd, true);
         else {
-            conn[fd].process(parse_status);
+            conn.process();
             mod_fd(fd, false);
         }
     });
 }
 
 void WebServer::send_msg(fd_t fd) {
-    Logger::debug("send fd: {}", fd);
+    logger_.debug("send fd: {}", fd);
 
-    switch (conn[fd].send_msg()) {
+    switch (conn_[fd]->send()) {
     case SendStatus::NOT_FINISH:
         mod_fd(fd, false);
         break;
@@ -123,31 +143,33 @@ void WebServer::send_msg(fd_t fd) {
         close_conn(fd);
         break;
     case SendStatus::KEEP_ALIVE:
-        conn[fd].~HttpConn();
+        reset_conn(fd);
         mod_fd(fd, true);
         break;
     }
 }
 
-void WebServer::start_server() {
-    epoll_fd = epoll_create(EVENT_COUNT);
+void WebServer::start_server() noexcept {
+    epoll_fd_ = epoll_create(EVENT_COUNT);
     create_listen();
-    add_fd(listen_fd, true, false);
+    add_fd(listen_fd_, true, false);
     add_fd(STDIN_FILENO, true, false);
 
-    Logger::info("listen {}:{}", ip, port);
+    logger_.info("listen {}:{}", ip_, port_);
 
     while (true) {
-        ssize_t cnt = epoll_wait(epoll_fd, events.get(), EVENT_COUNT, -1);
+        ssize_t cnt = epoll_wait(epoll_fd_, events_.get(), EVENT_COUNT, -1);
         for (ssize_t i = 0; i < cnt; i++) {
-            uint32_t event = events[i].events;
-            fd_t fd = events[i].data.fd;
+            auto event = events_[i].events;
+            fd_t fd = events_[i].data.fd;
 
-            if (fd == listen_fd)
+            logger_.debug("event: {}", event);
+
+            if (fd == listen_fd_)
                 accept_conn();
             else if (fd == STDIN_FILENO)
                 exec_cmd();
-            else if (event & EPOLLHUP)
+            else if (event & (EPOLLHUP | EPOLLRDHUP | EPOLLERR))
                 close_conn(fd);
             else if (event & EPOLLIN)
                 receive_msg(fd);
