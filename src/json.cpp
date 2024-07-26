@@ -202,7 +202,7 @@ void Serializer::serialize_value(const Value &val) {
         std::format_to(it_, "{}", *ptr);
     else if (auto ptr = val.get_if<Bool>())
         std::format_to(it_, "{}", *ptr);
-    else if (auto ptr = val.get_if<Null>())
+    else if (val.get_if<Null>())
         std::format_to(it_, "null");
     else
         throw JsonException("serialize: error json type");

@@ -2,6 +2,7 @@
 
 #include "type.h"
 #include <bits/types/struct_iovec.h>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -17,6 +18,7 @@ struct ResponseInfo {
     std::string body_;
     std::string send_header_;
     bool is_file_ = false;
+    void *file_ptr_;
     fd_t file_fd_;
     std::size_t file_size_;
     iovec vec_[2]{};

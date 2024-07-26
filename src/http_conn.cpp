@@ -10,6 +10,7 @@
 #include <format>
 #include <iterator>
 #include <map>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <sys/mman.h>
@@ -17,18 +18,29 @@
 #include <unistd.h>
 
 namespace suzukaze {
+HttpConn::~HttpConn() {
+    if (resp_.is_file_) {
+        munmap(resp_.file_ptr_, resp_.file_size_);
+        close(resp_.file_fd_);
+    }
+}
+
 auto HttpConn::receive() -> bool {
     static constexpr std::size_t LEN = 1500;
     static char buf[LEN];
 
     ssize_t cnt;
-    while ((cnt = read(CONN_FD_, buf, LEN)) > 0)
+    while ((cnt = read(fd_, buf, LEN)) > 0)
         req_.msg_.append(buf, cnt);
 
     if (errno != EAGAIN)
         throw SocketException("HttpConn::receive", error());
 
     return !cnt;
+}
+
+auto HttpConn::equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept -> bool {
+    return std::ranges::equal(lhs, rhs, std::equal_to<>(), tolower);
 }
 
 auto HttpConn::getline() noexcept -> bool {
@@ -55,11 +67,13 @@ auto HttpConn::parse_request_line() noexcept -> ParseStatus {
         return ParseStatus::FINISH;
     }
 
+    req_.req_line_ = std::move(req_.line_);
+
     static const std::map<std::string, RequestMethod> to = {{"GET", RequestMethod::GET},
                                                             {"POST", RequestMethod::POST}};
 
     req_.method_ = to.at(method);
-    req_.keep_alive_ = !(req_.scheme_ == "HTTP/1.0");
+    keep_alive_ = !(req_.scheme_ == "HTTP/1.0");
     req_.parse_step_ = ParseStep::HEADER;
     return ParseStatus::CONTINUE;
 }
@@ -87,12 +101,12 @@ auto HttpConn::parse_header() noexcept -> ParseStatus {
     if (key == CONTENT_LENGTH) {
         try {
             req_.content_length_ = std::stoull(value);
-        } catch (std::exception e) {
+        } catch (...) {
             resp_.status_code_ = StatusCode::BAD_REQUEST;
             return ParseStatus::FINISH;
         }
     } else if (key == CONNECTION)
-        req_.keep_alive_ = (value == KEEP_ALIVE);
+        keep_alive_ = equal_ignore_case(value, KEEP_ALIVE);
 
     req_.headers_[key] = std::move(value);
     return ParseStatus::CONTINUE;
@@ -151,7 +165,11 @@ void HttpConn::process_header() noexcept {
     if (resp_.status_code_ != StatusCode::OK)
         resp_.headers_.clear();
 
-    resp_.headers_.try_emplace(CONNECTION, req_.headers_[CONNECTION]);
+    {
+        auto [it, succ] = resp_.headers_.try_emplace(CONNECTION, keep_alive_ ? KEEP_ALIVE : CLOSE);
+        if (!succ)
+            keep_alive_ = equal_ignore_case(it->second, KEEP_ALIVE);
+    }
 
     auto &send_header = resp_.send_header_;
     auto it = std::back_inserter(send_header);
@@ -167,18 +185,18 @@ void HttpConn::process_body() noexcept {
         if (resp_.headers_.contains(CONTENT_TYPE)) {
             auto &vec = resp_.vec_;
             if (resp_.is_file_) {
+                auto &file_ptr = resp_.file_ptr_;
                 auto &file_fd = resp_.file_fd_;
                 auto &file_size = resp_.file_size_;
 
                 file_fd = open(resp_.body_.c_str(), O_RDONLY);
                 file_size = std::filesystem::file_size(resp_.body_);
-                void *p;
-                if ((p = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, file_fd, 0)) ==
+                if ((file_ptr = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, file_fd, 0)) ==
                     MAP_FAILED) {
                     resp_.status_code_ = StatusCode::INTERAL_ERROR;
                     return;
                 }
-                vec[1] = {p, file_size};
+                vec[1] = {file_ptr, file_size};
                 resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(file_size));
             } else {
                 vec[1] = {resp_.body_.data(), resp_.body_.size()};
@@ -189,10 +207,12 @@ void HttpConn::process_body() noexcept {
 }
 
 void HttpConn::process() noexcept {
+    logger_.info("request: {}", req_.req_line_);
+
     if (resp_.status_code_ == StatusCode::OK) {
         try {
-            router.get_handler(req_.method_, req_.url_)(req_, resp_);
-        } catch (UrlException e) {
+            router_.get_handler(req_.method_, req_.url_)(req_, resp_);
+        } catch (UrlException &e) {
             resp_.status_code_ = StatusCode::NOT_FOUND;
         } catch (std::exception &e) {
             resp_.status_code_ = StatusCode::INTERAL_ERROR;
@@ -206,20 +226,26 @@ void HttpConn::process() noexcept {
 
 SendStatus HttpConn::send() {
     auto &vec = resp_.vec_;
+    std::size_t idx = 0;
 
     ssize_t cnt;
-    while ((vec[0].iov_len || vec[1].iov_len) &&
-           (cnt = writev(CONN_FD_, vec, std::size(vec))) > 0) {
-        for (auto &v : vec) {
-            auto len = std::min<std::size_t>(v.iov_len, cnt);
-            v.iov_base = static_cast<std::uint8_t *>(v.iov_base) + len;
-            v.iov_len += len;
+    while ((vec[0].iov_len || vec[1].iov_len) && (cnt = writev(fd_, vec + idx, 2 - idx)) > 0) {
+        for (auto i = idx; cnt; i++) {
+            auto len = std::min<std::size_t>(vec[i].iov_len, cnt);
+            vec[i].iov_base = static_cast<std::int8_t *>(vec[i].iov_base) + len;
+            vec[i].iov_len -= len;
             cnt -= len;
+
+            if (!vec[i].iov_len)
+                idx++;
         }
     }
 
-    if (!vec[0].iov_len && vec[1].iov_len)
+    if (errno != EAGAIN)
+        return SendStatus::CLOSE;
+
+    if (vec[0].iov_len || vec[1].iov_len)
         return SendStatus::NOT_FINISH;
-    return req_.keep_alive_ ? SendStatus::KEEP_ALIVE : SendStatus::CLOSE;
+    return keep_alive_ ? SendStatus::KEEP_ALIVE : SendStatus::CLOSE;
 }
 } // namespace suzukaze

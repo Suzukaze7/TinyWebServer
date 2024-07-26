@@ -6,6 +6,8 @@
 #include "type.h"
 #include <bits/types/struct_iovec.h>
 #include <string>
+#include <string_view>
+#include <sys/mman.h>
 #include <type_traits>
 #include <unistd.h>
 
@@ -14,13 +16,16 @@ enum class ParseStatus { CONTINUE, NOT_FINISH, FINISH };
 enum class SendStatus { NOT_FINISH, CLOSE, KEEP_ALIVE };
 
 class HttpConn {
-    static inline Logger logger;
-    static inline Router &router = Router::get_instance();
+    static inline Logger logger_;
+    static inline Router &router_ = Router::get_instance();
 
-    const fd_t CONN_FD_ = -1;
+    const std::string host_;
+    const fd_t fd_ = -1;
+    bool keep_alive_;
     RequestInfo req_;
     ResponseInfo resp_;
 
+    auto equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept -> bool;
     auto getline() noexcept -> bool;
     auto parse_request_line() noexcept -> ParseStatus;
     auto parse_header() noexcept -> ParseStatus;
@@ -31,12 +36,9 @@ class HttpConn {
 
 public:
     HttpConn() noexcept = default;
-    HttpConn(fd_t fd) noexcept : CONN_FD_(fd) {}
+    HttpConn(fd_t fd) noexcept : fd_(fd) {}
 
-    ~HttpConn() {
-        if (resp_.is_file_)
-            close(resp_.file_fd_);
-    }
+    ~HttpConn();
 
     auto receive() -> bool;
     auto parse_request() noexcept -> ParseStatus;

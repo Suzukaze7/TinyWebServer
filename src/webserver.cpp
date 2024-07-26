@@ -3,7 +3,6 @@
 #include "include/http_conn.h"
 #include "include/type.h"
 #include "include/utils.h"
-#include <bitset>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
@@ -82,9 +81,9 @@ void WebServer::accept_conn() {
         char host[LEN], serv[LEN];
         getnameinfo(reinterpret_cast<sockaddr *>(&sa), salen, host, LEN, serv, LEN,
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        logger_.info("accept {}:{} fd: {}", host, serv, fd);
+        logger_.debug("accept {}:{} fd: {}", host, serv, fd);
 
-        while (fd + 1 > conn_.size())
+        while (static_cast<std::size_t>(fd) + 1 > conn_.size())
             conn_.push_back(std::make_unique<HttpConn>(conn_.size()));
 
         set_nonblock(fd);

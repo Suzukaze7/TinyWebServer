@@ -74,15 +74,40 @@ fcntl(fd, F_SETFL, new_option);
         swap=xxx
         ```
 
-5. Linux 使用手动编译的高版本 `gcc` 编译程序运行后报错 
+## 链接
 
-    ```
-    /lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
-    ```
+Linux 使用手动编译的高版本 `gcc` 编译程序运行后报错 
 
-    是因为 `gcc` 默认会去 `/lib, /usr/lib` 下找动态链接库，而系统又缺少高版本 `gcc` 所需的库
+```
+/lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
+/lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.31' not found
+```
 
-    解决办法，`gcc` 会优先去 `LD_LIBRARY_PATH` 环境变量存的路径去找库，所以在 `.bashrc` 中加上 `export LD_LIBRARY_PATH=xxx` 即可
+#### 编译选项
+
+- `-l`: 指定想要链接的库名，链接库都命名为 `libxxx.yy`，指定时只能指定 `xxx`，如果有多个有一个特殊的规则
+- `-L`: 指定额外去找库的目录路径
+- `-Wl,rpath`: 指定程序运行时额外去找库的目录路径
+
+#### 库搜索路径
+
+链接器在搜索库文件时通常会遵循以下顺序：
+
+1. 命令行指定的目录（使用 `-L` 选项）
+2. 环境变量 `LD_LIBRARY_PATH` 指定的目录
+3. 链接器默认的系统库目录（例如 `/lib`、`/usr/lib`、`/usr/local/lib` 等）
+4. 动态链接器配置文件中的路径（例如 `/etc/ld.so.conf` 和 `/etc/ld.so.conf.d/` 中的配置文件）
+
+当程序运行时，动态链接器会按以下顺序查找共享库：
+
+1. 使用 `rpath` 编译选项指定的目录
+2. 使用 `LD_LIBRARY_PATH` 环境变量指定的目录
+3. 使用 `ld.so.cache` 文件中列出的目录
+4. 默认系统库目录
+
+#### 默认链接库
+
+gcc 会默认链接一些库
 
 ## HTTP 请求报文
 
@@ -147,7 +172,49 @@ stdout:
 
 ## 重载函数导致函数模板推导失败
 
-## 
+## benchmark
+
+#### 编译 webbench
+
+- 报错
+  
+    ```
+    cc -Wall -ggdb -W -O   -c -o webbench.o webbench.c
+    webbench.c:21:10: fatal error: rpc/types.h: No such file or directory
+    21 | #include <rpc/types.h>
+       |          ^~~~~~~~~~~~~
+    compilation terminated.
+    make: *** [<builtin>: webbench.o] Error 1
+    ```
+
+  打开文件，将 `rpc/types.h` 改为 `sys/types.h`
+
+- 报错
+
+    ```
+    cc -Wall -ggdb -W -O  -o webbench webbench.o  
+    ctags *.c
+    /bin/sh: 1: ctags: not found
+    make: [Makefile:12: tags] Error 127 (ignored)
+    ```
+
+    下载 `sudo apt install universal-ctags`
+
+#### 优化过程
+
+- 初始
+  
+    ```
+    Benchmarking: GET http://localhost:8080/ (using HTTP/1.1)
+    200 clients, running 5 sec.
+
+    Speed=529356 pages/min, 6043207 bytes/sec.
+    Requests: 44113 susceed, 0 failed.
+    ```
+
+## mysql
+
+`sudo apt install libmysqlclient-dev`
 
 ## 难点
 

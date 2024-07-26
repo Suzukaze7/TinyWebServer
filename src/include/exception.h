@@ -8,10 +8,10 @@ class SocketException : public std::exception {
 
 public:
     SocketException() noexcept(noexcept(std::string())) = default;
-    SocketException(std::string msg) noexcept;
-    SocketException(std::string addr, std::string msg);
+    SocketException(std::string msg) noexcept : msg_(msg) {}
+    SocketException(std::string addr, std::string msg) : msg_(addr + " " + msg) {}
 
-    const char *what() const noexcept override;
+    const char *what() const noexcept override { return msg_.c_str(); }
 };
 
 class UrlException : public std::exception {
@@ -19,7 +19,9 @@ class UrlException : public std::exception {
 
 public:
     UrlException() noexcept(noexcept(std::string())) = default;
-    UrlException(std::string msg) noexcept;
+    UrlException(std::string msg) noexcept : msg_(msg) {}
+
+    const char *what() const noexcept override { return msg_.c_str(); }
 };
 
 class HandlerException : public std::exception {
@@ -27,9 +29,9 @@ class HandlerException : public std::exception {
 
 public:
     HandlerException() noexcept(noexcept(std::string())) = default;
-    HandlerException(std::string msg) noexcept;
+    HandlerException(std::string msg) noexcept : msg_(msg) {}
 
-    const char *what() const noexcept override;
+    const char *what() const noexcept override { return msg_.c_str(); }
 };
 
 namespace json {
@@ -38,9 +40,9 @@ class JsonException : public std::exception {
 
 public:
     JsonException() noexcept(noexcept(std::string())) = default;
-    JsonException(std::string msg) noexcept;
+    JsonException(std::string msg) noexcept : msg_(msg) {}
 
-    const char *what() const noexcept override;
+    const char *what() const noexcept override { return msg_.c_str(); }
 };
-}
+} // namespace json
 } // namespace suzukaze

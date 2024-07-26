@@ -13,12 +13,12 @@ struct RequestInfo {
     ParseStep parse_step_ = ParseStep::REQUEST_LINE;
     std::size_t idx_ = 0;
     std::string msg_, line_;
-    bool keep_alive_;
+    std::string req_line_;
     RequestMethod method_;
     std::string url_, scheme_;
     std::size_t content_length_ = 0;
-    std::string body_;
     std::unordered_map<std::string, std::string> headers_;
+    std::string body_;
 };
 
 class HttpRequest {
