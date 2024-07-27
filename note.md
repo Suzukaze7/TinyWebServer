@@ -218,7 +218,7 @@ stdout:
 
 ## 难点
 
-- `logger` 与 `router` 在 `HttpConn` 类中需要使用，又不想设计成单例，于是定义成 `HttpConn` 类的静态成员变量，又由于 `WebServer` 类中也要使用，于是将 `WebServer` 作为 `HttpConn` 的友元
+- `logger` 与 `router` 在 `HttpConn` 类中需要使用，又不想设计成单例，于是定义成 `HttpConn` 类的静态成员变量，又由于 `WebServer` 类中也要使用，于是将 `WebServer` 作为 `HttpConn` 的友元。(补充)这样设计不好，使得在使用上有限制，整个程序只能有一个 `WebServer` 类，但是给 `HttpConn` 都加个成员变量，开销感觉太大了？
 - `parse_request` 返回值应该用 `StatusCode` 还是独自定义状态，用 `StatusCode` 会导致枚举有不属于正常状态码该有的状态，独自定义在 `process` 中又会导致状态对应很难看，所以决定返回 `pair`
 
 ## todo

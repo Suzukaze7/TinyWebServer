@@ -10,9 +10,10 @@
 #include <type_traits>
 
 namespace suzukaze {
-Router Router::instance;
-
-Router &Router::get_instance() { return instance; }
+Router &Router::get_instance() {
+    static Router instance;
+    return instance;
+}
 
 void Router::add_handler(RequestMethod method, std::string_view url, Handler handler) {
     if (url.empty() || (url != "/" && (!url.starts_with('/') || url.ends_with('/'))))

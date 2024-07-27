@@ -3,6 +3,7 @@
 #include "include/header.h"
 #include "include/http_response.h"
 #include "include/logger.hpp"
+#include "include/type.h"
 #include "include/utils.h"
 #include <cerrno>
 #include <fcntl.h>
@@ -16,21 +17,17 @@
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <utility>
 
 namespace suzukaze {
-HttpConn::~HttpConn() {
-    if (resp_.is_file_) {
-        munmap(resp_.file_ptr_, resp_.file_size_);
-        close(resp_.file_fd_);
-    }
-}
+auto HttpConn::host() -> std::string && { return std::move(host_); }
 
-auto HttpConn::receive() -> bool {
+auto HttpConn::receive(fd_t fd) -> bool {
     static constexpr std::size_t LEN = 1500;
     static char buf[LEN];
 
     ssize_t cnt;
-    while ((cnt = read(fd_, buf, LEN)) > 0)
+    while ((cnt = read(fd, buf, LEN)) > 0)
         req_.msg_.append(buf, cnt);
 
     if (errno != EAGAIN)
@@ -150,13 +147,6 @@ auto HttpConn::parse_request() noexcept -> ParseStatus {
 }
 
 void HttpConn::process_status_line() noexcept {
-    static const std::map<StatusCode, std::string> status_info = {
-        {StatusCode::OK, "OK"},
-        {StatusCode::BAD_REQUEST, "Bad Request"},
-        {StatusCode::NOT_FOUND, "Not Found"},
-        {StatusCode::INTERAL_ERROR, "Internal Server Error"},
-    };
-
     std::format_to(std::back_inserter(resp_.send_header_), "{} {} {}\r\n", req_.scheme_,
                    to_underlying(resp_.status_code_), status_info.at(resp_.status_code_));
 }
@@ -207,9 +197,7 @@ void HttpConn::process_body() noexcept {
 }
 
 void HttpConn::process() noexcept {
-    logger_.info("request: {}", req_.req_line_);
-
-    if (resp_.status_code_ == StatusCode::OK) {
+    if (resp_.status_code_ == StatusCode::OK)
         try {
             router_.get_handler(req_.method_, req_.url_)(req_, resp_);
         } catch (UrlException &e) {
@@ -217,19 +205,21 @@ void HttpConn::process() noexcept {
         } catch (std::exception &e) {
             resp_.status_code_ = StatusCode::INTERAL_ERROR;
         }
-    }
+
+    logger_.info("request: {} {} {}", req_.req_line_, to_underlying(resp_.status_code_),
+                 status_info.at(resp_.status_code_));
 
     process_body();
     process_status_line();
     process_header();
 }
 
-SendStatus HttpConn::send() {
+SendStatus HttpConn::send(fd_t fd) {
     auto &vec = resp_.vec_;
     std::size_t idx = 0;
 
     ssize_t cnt;
-    while ((vec[0].iov_len || vec[1].iov_len) && (cnt = writev(fd_, vec + idx, 2 - idx)) > 0) {
+    while ((vec[0].iov_len || vec[1].iov_len) && (cnt = writev(fd, vec + idx, 2 - idx)) > 0) {
         for (auto i = idx; cnt; i++) {
             auto len = std::min<std::size_t>(vec[i].iov_len, cnt);
             vec[i].iov_base = static_cast<std::int8_t *>(vec[i].iov_base) + len;

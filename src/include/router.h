@@ -18,9 +18,7 @@ class Router {
 
     std::shared_ptr<RouteNode> root_ = std::make_shared<RouteNode>();
 
-    static Router instance;
-
-    Router() noexcept = default;
+    Router() = default;
     Router(Router &) = delete;
     Router(Router &&) = delete;
 

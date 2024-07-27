@@ -16,11 +16,17 @@ enum class ParseStatus { CONTINUE, NOT_FINISH, FINISH };
 enum class SendStatus { NOT_FINISH, CLOSE, KEEP_ALIVE };
 
 class HttpConn {
+    static inline const std::map<StatusCode, std::string> status_info = {
+        {StatusCode::OK, "OK"},
+        {StatusCode::BAD_REQUEST, "Bad Request"},
+        {StatusCode::NOT_FOUND, "Not Found"},
+        {StatusCode::INTERAL_ERROR, "Internal Server Error"},
+    };
+
     static inline Logger logger_;
     static inline Router &router_ = Router::get_instance();
 
-    const std::string host_;
-    const fd_t fd_ = -1;
+    std::string host_;
     bool keep_alive_;
     RequestInfo req_;
     ResponseInfo resp_;
@@ -35,14 +41,18 @@ class HttpConn {
     void process_header() noexcept;
 
 public:
-    HttpConn() noexcept = default;
-    HttpConn(fd_t fd) noexcept : fd_(fd) {}
+    HttpConn(std::string host) noexcept : host_(host) {}
+    ~HttpConn() {
+        if (resp_.is_file_) {
+            munmap(resp_.file_ptr_, resp_.file_size_);
+            close(resp_.file_fd_);
+        }
+    }
 
-    ~HttpConn();
-
-    auto receive() -> bool;
+    auto host() -> std::string &&;
+    auto receive(fd_t fd) -> bool;
     auto parse_request() noexcept -> ParseStatus;
     void process() noexcept;
-    auto send() -> SendStatus;
+    auto send(fd_t fd) -> SendStatus;
 };
 } // namespace suzukaze
