@@ -212,9 +212,17 @@ stdout:
     Requests: 44113 susceed, 0 failed.
     ```
 
+## 正则表达式
+
+语法：[C++正则表达式全攻略：从基础到高级应用](https://blog.csdn.net/Long_xu/article/details/135306358)
+
+C++ [正则表达式库](https://zh.cppreference.com/w/cpp/regex)
+
+对于 `std::regex_search` 的匹配逻辑可以理解成匹配最左侧合法的子串
+
 ## mysql
 
-`sudo apt install libmysqlclient-dev`
+mysql库：`sudo apt install libmysqlclient-dev`
 
 ## 难点
 

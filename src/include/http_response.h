@@ -1,5 +1,6 @@
 #pragma once
 
+#include "json.h"
 #include "type.h"
 #include <bits/types/struct_iovec.h>
 #include <cstddef>
@@ -7,10 +8,9 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include "json.h"
 
 namespace suzukaze {
-enum class StatusCode { OK = 200, BAD_REQUEST = 400, NOT_FOUND = 404, INTERAL_ERROR = 500 };
+enum class StatusCode { OK, BAD_REQUEST, NOT_FOUND, NOT_ALLOWED, INTERAL_ERROR };
 
 struct ResponseInfo {
     StatusCode status_code_ = StatusCode::OK;
@@ -19,7 +19,6 @@ struct ResponseInfo {
     std::string send_header_;
     bool is_file_ = false;
     void *file_ptr_;
-    fd_t file_fd_;
     std::size_t file_size_;
     iovec vec_[2]{};
 };
@@ -30,8 +29,9 @@ class HttpResponse {
 public:
     HttpResponse(ResponseInfo &info) noexcept : info_(info) {}
 
-    void set_header(std::string key, std::string value);
-    void plain(std::string data);
+    void set_header(std::string key, std::string value) noexcept;
+    void plain(std::string data) noexcept;
+    void file(std::string file_path);
     void html(std::string file_path);
     void json(const json::Value &val);
 };

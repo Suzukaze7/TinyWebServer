@@ -4,6 +4,10 @@
 #include "include/json.h"
 
 namespace suzukaze {
+auto HttpRequest::get_param(const std::string &key) const noexcept -> const std::string & {
+    return info_.params_.at(key);
+}
+
 auto HttpRequest::get_header(const std::string &key) const noexcept -> const std::string & {
     return info_.headers_.at(key);
 }

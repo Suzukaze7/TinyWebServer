@@ -10,21 +10,23 @@
 #include <sys/mman.h>
 #include <type_traits>
 #include <unistd.h>
+#include <utility>
 
 namespace suzukaze {
 enum class ParseStatus { CONTINUE, NOT_FINISH, FINISH };
 enum class SendStatus { NOT_FINISH, CLOSE, KEEP_ALIVE };
 
 class HttpConn {
-    static inline const std::map<StatusCode, std::string> status_info = {
-        {StatusCode::OK, "OK"},
-        {StatusCode::BAD_REQUEST, "Bad Request"},
-        {StatusCode::NOT_FOUND, "Not Found"},
-        {StatusCode::INTERAL_ERROR, "Internal Server Error"},
+    inline static const std::map<StatusCode, std::pair<std::uint16_t, std::string>> STATUS_INFO = {
+        {StatusCode::OK, {200, "OK"}},
+        {StatusCode::BAD_REQUEST, {400, "Bad Request"}},
+        {StatusCode::NOT_FOUND, {404, "Not Found"}},
+        {StatusCode::NOT_ALLOWED, {405, "Method Not Allowed"}},
+        {StatusCode::INTERAL_ERROR, {500, "Internal Server Error"}},
     };
 
-    static inline Logger logger_;
-    static inline Router &router_ = Router::get_instance();
+    Logger &logger_;
+    RootRouter &router_;
 
     std::string host_;
     bool keep_alive_;
@@ -41,12 +43,12 @@ class HttpConn {
     void process_header() noexcept;
 
 public:
-    HttpConn(std::string host) noexcept : host_(host) {}
+    HttpConn(Logger &logger, RootRouter &router, std::string host) noexcept
+        : logger_(logger), router_(router), host_(std::move(host)) {}
+
     ~HttpConn() {
-        if (resp_.is_file_) {
+        if (resp_.is_file_)
             munmap(resp_.file_ptr_, resp_.file_size_);
-            close(resp_.file_fd_);
-        }
     }
 
     auto host() -> std::string &&;

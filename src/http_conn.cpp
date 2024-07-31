@@ -6,20 +6,24 @@
 #include "include/type.h"
 #include "include/utils.h"
 #include <cerrno>
+#include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <iterator>
 #include <map>
 #include <ranges>
-#include <sstream>
+#include <regex>
 #include <string>
+#include <string_view>
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <unistd.h>
 #include <utility>
 
 namespace suzukaze {
+using namespace std::string_view_literals;
+
 auto HttpConn::host() -> std::string && { return std::move(host_); }
 
 auto HttpConn::receive(fd_t fd) -> bool {
@@ -30,8 +34,10 @@ auto HttpConn::receive(fd_t fd) -> bool {
     while ((cnt = read(fd, buf, LEN)) > 0)
         req_.msg_.append(buf, cnt);
 
-    if (errno != EAGAIN)
-        throw SocketException("HttpConn::receive", error());
+    if (errno != EAGAIN) {
+        logger_.debug("HttpConn::receive error: {}", error());
+        return true;
+    }
 
     return !cnt;
 }
@@ -56,21 +62,45 @@ auto HttpConn::getline() noexcept -> bool {
 }
 
 auto HttpConn::parse_request_line() noexcept -> ParseStatus {
-    std::string method;
-    std::istringstream sin(req_.line_);
-    sin >> method >> req_.url_ >> req_.scheme_;
-    if (!sin) {
+    req_.req_line_ = std::move(req_.line_);
+    auto &line = req_.req_line_;
+
+    static const std::regex PATTERN(R"((\w+)\s+(\S+)\s+(HTTP\/\d+\.\d+))");
+    std::smatch res;
+    if (!std::regex_match(line, res, PATTERN)) {
         resp_.status_code_ = StatusCode::BAD_REQUEST;
         return ParseStatus::FINISH;
     }
 
-    req_.req_line_ = std::move(req_.line_);
+    static const std::map<std::string_view, RequestMethod> to = {{"GET", RequestMethod::GET},
+                                                                 {"POST", RequestMethod::POST}};
+    try {
+        req_.method_ = to.at(std::string_view(res[1].first, res[1].second));
+    } catch (...) {
+        resp_.status_code_ = StatusCode::NOT_ALLOWED;
+        return ParseStatus::FINISH;
+    }
 
-    static const std::map<std::string, RequestMethod> to = {{"GET", RequestMethod::GET},
-                                                            {"POST", RequestMethod::POST}};
+    static const std::regex URL_PATTERN(R"([^?]+)"), PARAM_PATTERN(R"(([^?&]+)=([^?&]+))");
+    std::smatch url_res;
+    if (!std::regex_search(res[2].first, res[2].second, url_res, URL_PATTERN)) {
+        resp_.status_code_ = StatusCode::BAD_REQUEST;
+        return ParseStatus::FINISH;
+    }
+    req_.url_ = url_res[0];
+    for (std::sregex_iterator it(url_res[0].first, url_res[0].second, PARAM_PATTERN), ed; it != ed;
+         it++) {
+        req_.params_.emplace((*it)[1], (*it)[2]);
+    }
+    for (std::regex_iterator<std::string::const_iterator>
+             it(res[2].first, res[2].second, URL_PATTERN),
+         ed;
+         it != ed; it++) {
+    }
 
-    req_.method_ = to.at(method);
-    keep_alive_ = !(req_.scheme_ == "HTTP/1.0");
+    req_.scheme_ = res[3];
+    keep_alive_ = (req_.scheme_ > "HTTP/1.0"sv); // 加上 sv 就没有 std::string 复制开销？
+
     req_.parse_step_ = ParseStep::HEADER;
     return ParseStatus::CONTINUE;
 }
@@ -85,16 +115,15 @@ auto HttpConn::parse_header() noexcept -> ParseStatus {
         return ParseStatus::CONTINUE;
     }
 
-    std::size_t pos = line.find(':');
-    if (pos == std::string::npos) {
+    static const std::regex PATTERN(R"(([^:]+)\s*:\s*(.*))");
+    std::smatch res;
+    if (!std::regex_match(line.cbegin(), line.cend(), res, PATTERN)) {
         resp_.status_code_ = StatusCode::BAD_REQUEST;
         return ParseStatus::FINISH;
     }
 
-    std::string key = line.substr(0, pos),
-                value = line.substr(pos + 2); //:后有一个空格
-
-    // todo: need optimize
+    // todo: need optimize and more strict
+    std::string key = res[1], value = res[2];
     if (key == CONTENT_LENGTH) {
         try {
             req_.content_length_ = std::stoull(value);
@@ -147,8 +176,9 @@ auto HttpConn::parse_request() noexcept -> ParseStatus {
 }
 
 void HttpConn::process_status_line() noexcept {
-    std::format_to(std::back_inserter(resp_.send_header_), "{} {} {}\r\n", req_.scheme_,
-                   to_underlying(resp_.status_code_), status_info.at(resp_.status_code_));
+    auto &[code, info] = STATUS_INFO.at(resp_.status_code_);
+    std::format_to(std::back_inserter(resp_.send_header_), "{} {} {}\r\n", req_.scheme_, code,
+                   info);
 }
 
 void HttpConn::process_header() noexcept {
@@ -171,27 +201,29 @@ void HttpConn::process_header() noexcept {
 }
 
 void HttpConn::process_body() noexcept {
-    if (resp_.status_code_ == StatusCode::OK) {
-        if (resp_.headers_.contains(CONTENT_TYPE)) {
-            auto &vec = resp_.vec_;
-            if (resp_.is_file_) {
-                auto &file_ptr = resp_.file_ptr_;
-                auto &file_fd = resp_.file_fd_;
-                auto &file_size = resp_.file_size_;
+    if (resp_.status_code_ == StatusCode::OK && !resp_.body_.empty()) {
+        auto &vec = resp_.vec_;
+        if (resp_.is_file_) {
+            auto &file_ptr = resp_.file_ptr_;
+            auto &file_size = resp_.file_size_;
 
-                file_fd = open(resp_.body_.c_str(), O_RDONLY);
-                file_size = std::filesystem::file_size(resp_.body_);
-                if ((file_ptr = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, file_fd, 0)) ==
+            auto file_path = router_.real_file_path(resp_.body_);
+            fd_t file_fd;
+            if ((file_fd = open(file_path.c_str(), O_RDONLY)) == -1 ||
+                (file_size = std::filesystem::file_size(file_path)) ==
+                    static_cast<std::uintmax_t>(-1) ||
+                (file_ptr = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, file_fd, 0)) ==
                     MAP_FAILED) {
-                    resp_.status_code_ = StatusCode::INTERAL_ERROR;
-                    return;
-                }
-                vec[1] = {file_ptr, file_size};
-                resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(file_size));
-            } else {
-                vec[1] = {resp_.body_.data(), resp_.body_.size()};
-                resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(resp_.body_.size()));
+                resp_.status_code_ = StatusCode::INTERAL_ERROR;
+                return;
             }
+            close(file_fd);
+
+            vec[1] = {file_ptr, file_size};
+            resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(file_size));
+        } else {
+            vec[1] = {resp_.body_.data(), resp_.body_.size()};
+            resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(resp_.body_.size()));
         }
     }
 }
@@ -206,12 +238,12 @@ void HttpConn::process() noexcept {
             resp_.status_code_ = StatusCode::INTERAL_ERROR;
         }
 
-    logger_.info("request: {} {} {}", req_.req_line_, to_underlying(resp_.status_code_),
-                 status_info.at(resp_.status_code_));
-
     process_body();
     process_status_line();
     process_header();
+
+    auto &[code, info] = STATUS_INFO.at(resp_.status_code_);
+    logger_.info("request: {} {} {} {}", host_, req_.req_line_, code, info);
 }
 
 SendStatus HttpConn::send(fd_t fd) {
@@ -231,7 +263,7 @@ SendStatus HttpConn::send(fd_t fd) {
         }
     }
 
-    if (errno != EAGAIN)
+    if (errno != EAGAIN) // SIGPIPE
         return SendStatus::CLOSE;
 
     if (vec[0].iov_len || vec[1].iov_len)

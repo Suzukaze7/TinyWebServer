@@ -5,8 +5,12 @@
 #include "src/include/http_response.h"
 #include "src/include/json.h"
 #include "src/include/webserver.h"
+#include <filesystem>
 #include <format>
+#include <iostream>
 #include <random>
+#include <regex>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -30,6 +34,9 @@ void test_webserver() {
     suzukaze::WebServer server("0.0.0.0", 8080);
     server.get("/", [](suzukaze::HttpRequest request, suzukaze::HttpResponse response) {
         response.html("judge.html");
+    });
+    server.get("/file", [](suzukaze::HttpRequest request, suzukaze::HttpResponse response) {
+        response.html("file.html");
     });
     server.start_server();
 }

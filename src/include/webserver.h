@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <sys/epoll.h>
+#include <utility>
 #include <vector>
 
 namespace suzukaze {
@@ -21,7 +22,7 @@ class WebServer {
     fd_t listen_fd_;
     fd_t epoll_fd_;
     Logger logger_;
-    Router &router_ = Router::get_instance();
+    RootRouter router_;
     std::unique_ptr<ThreadPool<>> thread_pool_;
     std::unique_ptr<epoll_event[]> events_;
     MemoryPool<HttpConn> mem_pool_;
@@ -34,13 +35,16 @@ class WebServer {
     void init_resource();
     void exec_cmd();
     void accept_conn();
-    void receive_msg(fd_t fd);
     void close_conn(fd_t fd);
+    void reset_conn(fd_t fd);
+    void receive_msg(fd_t fd);
     void send_msg(fd_t fd);
 
 public:
-    WebServer(std::string ip, std::uint16_t port, std::size_t max_conn_cnt = 10000) noexcept
-        : MAX_CONN_CNT_(max_conn_cnt), ip_(std::move(ip)), port_(port) {}
+    WebServer(std::string ip, std::uint16_t port, std::string static_dir = "./static",
+              std::size_t max_conn_cnt = 10000) noexcept
+        : MAX_CONN_CNT_(max_conn_cnt), ip_(std::move(ip)), port_(port),
+          router_(std::move(static_dir)) {}
 
     ~WebServer() {
         close(listen_fd_);

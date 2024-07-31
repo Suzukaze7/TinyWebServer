@@ -3,6 +3,7 @@
 #include "include/http_conn.h"
 #include "include/type.h"
 #include "include/utils.h"
+#include <asm-generic/socket.h>
 #include <fcntl.h>
 #include <memory>
 #include <netdb.h>
@@ -64,6 +65,10 @@ void WebServer::create_listen() {
     if ((listen_fd_ = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
         throw SocketException("WebServer::create_listen socket", error());
 
+    int flag = true;
+    if (setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof flag) == -1)
+        throw SocketException("WebServer::create_listen setsockopt", error());
+
     if (bind(listen_fd_, result->ai_addr, result->ai_addrlen) == -1)
         throw SocketException("WebServer::create_listen bind", error());
 
@@ -84,6 +89,13 @@ void WebServer::init_resource() {
     mem_pool_ = decltype(mem_pool_)(MAX_CONN_CNT_);
 }
 
+void WebServer::exec_cmd() {
+    std::string cmd;
+    std::getline(std::cin, cmd);
+    if (cmd == "stop")
+        std::exit(0);
+}
+
 void WebServer::accept_conn() {
     fd_t fd;
     sockaddr_in sa;
@@ -98,12 +110,12 @@ void WebServer::accept_conn() {
         char host[LEN], serv[LEN];
         getnameinfo(reinterpret_cast<sockaddr *>(&sa), salen, host, LEN, serv, LEN,
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        logger_.debug("accept {}:{} fd: {}", host, serv, fd);
+        logger_.debug("WebServer::accept_conn accept {}:{} fd: {}", host, serv, fd);
 
         if (static_cast<std::size_t>(fd) + 1 > conn_.size())
-            conn_.resize(fd + 1);
+            conn_.resize(static_cast<std::size_t>(fd) + 1);
 
-        conn_[fd] = mem_pool_.allocate(std::format("{}:{}", host, serv));
+        conn_[fd] = mem_pool_.allocate(logger_, router_, std::format("{}:{}", host, serv));
         set_nonblock(fd);
         add_fd(fd, true, true);
     }
@@ -118,11 +130,13 @@ void WebServer::close_conn(fd_t fd) {
     conn_[fd] = nullptr;
 }
 
-void WebServer::exec_cmd() {
-    std::string cmd;
-    std::getline(std::cin, cmd);
-    if (cmd == "stop")
-        std::exit(0);
+void WebServer::reset_conn(fd_t fd) {
+    logger_.debug("WebServer::reset_conn reset fd: {}", fd);
+
+    auto host = conn_[fd]->host();
+    mem_pool_.deallocate(conn_[fd]);
+    conn_[fd] = mem_pool_.allocate(logger_, router_, std::move(host));
+    mod_fd(fd, true);
 }
 
 void WebServer::receive_msg(fd_t fd) {
@@ -152,10 +166,7 @@ void WebServer::send_msg(fd_t fd) {
         close_conn(fd);
         break;
     case SendStatus::KEEP_ALIVE:
-        auto host = conn_[fd]->host();
-        mem_pool_.deallocate(conn_[fd]);
-        conn_[fd] = mem_pool_.allocate(std::move(host));
-        mod_fd(fd, true);
+        reset_conn(fd);
         break;
     }
 }

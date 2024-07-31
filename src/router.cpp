@@ -10,17 +10,11 @@
 #include <type_traits>
 
 namespace suzukaze {
-Router &Router::get_instance() {
-    static Router instance;
-    return instance;
-}
-
 void Router::add_handler(RequestMethod method, std::string_view url, Handler handler) {
     if (url.empty() || (url != "/" && (!url.starts_with('/') || url.ends_with('/'))))
         throw UrlException("url should start with '/' and not end with '/'");
 
-    url.remove_prefix(1);
-    std::filesystem::path path = url;
+    std::filesystem::path path(url.substr(1));
     auto type_idx = to_underlying(method);
     auto ptr = root_;
     for (auto &step : path)
@@ -33,23 +27,35 @@ void Router::add_handler(RequestMethod method, std::string_view url, Handler han
 }
 
 auto Router::get_handler(RequestMethod method, std::string_view url) -> Handler & {
-    if (url.empty() || (url != "/" && (!url.starts_with('/') || url.ends_with('/'))))
-        throw UrlException("url should start with '/' and not end with '/'");
-
-    url.remove_prefix(1);
-    std::filesystem::path path = url;
+    std::filesystem::path path(url.substr(1));
     auto type_idx = to_underlying(method);
     auto ptr = root_;
     for (auto &step : path) {
-        if (!ptr->next_.contains(step))
-            throw UrlException("url not exists");
+        if (!ptr->next_.contains(step)) {
+            ptr.reset();
+            break;
+        }
         ptr = ptr->next_[step];
     }
 
-    if (!ptr->handlers_[type_idx])
-        throw UrlException("url not exists");
+    if (!ptr || !ptr->handlers_[type_idx])
+        throw UrlException(std::format("url {} not exists", url));
 
     return ptr->handlers_[type_idx];
+}
+
+auto RootRouter::get_handler(RequestMethod method, std::string_view url) -> Handler & {
+    try {
+        return Router::get_handler(method, url);
+    } catch (UrlException &e) {
+        if (std::filesystem::exists(real_file_path(std::string_view(url.begin() + 1, url.end()))))
+            return file_handler_;
+        throw;
+    }
+}
+
+auto RootRouter::real_file_path(std::string_view url) noexcept -> std::filesystem::path {
+    return static_dir_ / url;
 }
 
 } // namespace suzukaze

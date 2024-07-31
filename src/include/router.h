@@ -1,11 +1,17 @@
 #pragma once
+#include "exception.h"
 #include "http_request.h"
 #include "http_response.h"
 #include <array>
+#include <filesystem>
+#include <format>
 #include <functional>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 namespace suzukaze {
 using Handler = std::function<void(HttpRequest, HttpResponse)>;
@@ -18,15 +24,27 @@ class Router {
 
     std::shared_ptr<RouteNode> root_ = std::make_shared<RouteNode>();
 
-    Router() = default;
-    Router(Router &) = delete;
-    Router(Router &&) = delete;
-
 public:
-    static Router &get_instance();
+    // Router(Router &&);
 
     void add_handler(RequestMethod method, std::string_view url, Handler handler);
 
     auto get_handler(RequestMethod method, std::string_view url) -> Handler &;
+};
+
+class RootRouter : public Router {
+    struct FileHandler {
+        void operator()(HttpRequest req, HttpResponse resp) { resp.file(req.get_url().substr(1)); }
+    };
+    Handler file_handler_{FileHandler{}};
+
+    std::filesystem::path static_dir_;
+
+public:
+    RootRouter(std::string static_dir) noexcept : static_dir_(std::move(static_dir)) {}
+
+    auto get_handler(RequestMethod method, std::string_view url) -> Handler &;
+
+    auto real_file_path(std::string_view url) noexcept -> std::filesystem::path;
 };
 } // namespace suzukaze
