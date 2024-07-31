@@ -1,4 +1,4 @@
-D ?= 1
+D ?= 0
 SRC := main.cpp
 
 CXX := g++

@@ -202,15 +202,213 @@ stdout:
 
 #### 优化过程
 
-- 初始
-  
-    ```
-    Benchmarking: GET http://localhost:8080/ (using HTTP/1.1)
-    200 clients, running 5 sec.
+测试 url 为 /，返回 `judge.html` 文件
 
-    Speed=529356 pages/min, 6043207 bytes/sec.
-    Requests: 44113 susceed, 0 failed.
-    ```
+```
+Document Path:          /
+Document Length:        586 bytes
+```
+
+#### 初始(1st)
+
+```
+Concurrency Level:      1000
+Time taken for tests:   6.080 seconds
+Complete requests:      999
+Failed requests:        0
+Total transferred:      685685 bytes
+HTML transferred:       586586 bytes
+Requests per second:    164.32 [#/sec] (mean)
+Time per request:       6085.806 [ms] (mean)
+Time per request:       6.086 [ms] (mean, across all concurrent requests)
+Transfer rate:          110.14 [Kbytes/sec] received
+
+Connection Times (ms)
+            min  mean[+/-sd] median   max
+Connect:        0    3   5.2      0      18
+Processing:  2945 3055  59.1   3076    3141
+Waiting:        0 1461 857.4   1450    2937
+Total:       2947 3058  59.0   3078    3141
+
+Percentage of the requests served within a certain time (ms)
+50%   3078
+66%   3099
+75%   3108
+80%   3110
+90%   3123
+95%   3126
+98%   3136
+99%   3139
+100%   3141 (longest request)
+```
+
+连接方式改为保持连接后
+
+```
+Concurrency Level:      1000
+Time taken for tests:   4.390 seconds
+Complete requests:      50000
+Failed requests:        0
+Keep-Alive requests:    50000
+Total transferred:      34500000 bytes
+HTML transferred:       29300000 bytes
+Requests per second:    11388.66 [#/sec] (mean)
+Time per request:       87.807 [ms] (mean)
+Time per request:       0.088 [ms] (mean, across all concurrent requests)
+Transfer rate:          7674.00 [Kbytes/sec] received
+
+Connection Times (ms)
+            min  mean[+/-sd] median   max
+Connect:        0    0   0.6      0      19
+Processing:    10   59 225.8     31    2826
+Waiting:        5   59 225.5     31    2822
+Total:         10   59 226.1     31    2828
+
+Percentage of the requests served within a certain time (ms)
+50%     31
+66%     32
+75%     33
+80%     35
+90%     43
+95%     47
+98%     69
+99%   1436
+100%   2828 (longest request)
+```
+
+继续加压
+
+```
+Concurrency Level:      2000
+Time taken for tests:   25.696 seconds
+Complete requests:      500000
+Failed requests:        0
+Keep-Alive requests:    500000
+Total transferred:      345000000 bytes
+HTML transferred:       293000000 bytes
+Requests per second:    19458.59 [#/sec] (mean)
+Time per request:       102.782 [ms] (mean)
+Time per request:       0.051 [ms] (mean, across all concurrent requests)
+Transfer rate:          13111.74 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   1.6      0    1056
+Processing:     0   83 305.3     31    7848
+Waiting:        0   83 305.1     31    7842
+Total:          0   83 305.5     31    7853
+
+Percentage of the requests served within a certain time (ms)
+  50%     31
+  66%     47
+  75%     47
+  80%     47
+  90%     78
+  95%    297
+  98%    532
+  99%    614
+ 100%   7853 (longest request)
+```
+
+```
+Concurrency Level:      3000
+Time taken for tests:   33.452 seconds
+Complete requests:      500000
+Failed requests:        0
+Keep-Alive requests:    500000
+Total transferred:      345000000 bytes
+HTML transferred:       293000000 bytes
+Requests per second:    14946.86 [#/sec] (mean)
+Time per request:       200.711 [ms] (mean)
+Time per request:       0.067 [ms] (mean, across all concurrent requests)
+Transfer rate:          10071.62 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.5      0      24
+Processing:     6  140 479.3     47   16306
+Waiting:        0  140 479.1     47   16306
+Total:          6  140 479.4     47   16306
+
+Percentage of the requests served within a certain time (ms)
+  50%     47
+  66%     53
+  75%     63
+  80%     68
+  90%    307
+  95%    501
+  98%    640
+  99%   1103
+ 100%  16306 (longest request)
+```
+
+#### 加上内存池后
+
+```
+Concurrency Level:      2000
+Time taken for tests:   23.781 seconds
+Complete requests:      500000
+Failed requests:        0
+Keep-Alive requests:    500000
+Total transferred:      345000000 bytes
+HTML transferred:       293000000 bytes
+Requests per second:    21024.87 [#/sec] (mean)
+Time per request:       95.125 [ms] (mean)
+Time per request:       0.048 [ms] (mean, across all concurrent requests)
+Transfer rate:          14167.15 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.4      0      31
+Processing:    12   82 244.9     47    6072
+Waiting:        0   82 244.7     47    6057
+Total:         12   82 245.0     47    6072
+
+Percentage of the requests served within a certain time (ms)
+  50%     47
+  66%     47
+  75%     47
+  80%     48
+  90%     78
+  95%    297
+  98%    491
+  99%    611
+ 100%   6072 (longest request)
+```
+
+#### 手写队列加上内存池后
+
+```
+Concurrency Level:      2000
+Time taken for tests:   22.050 seconds
+Complete requests:      500000
+Failed requests:        0
+Keep-Alive requests:    500000
+Total transferred:      345000000 bytes
+HTML transferred:       293000000 bytes
+Requests per second:    22675.63 [#/sec] (mean)
+Time per request:       88.200 [ms] (mean)
+Time per request:       0.044 [ms] (mean, across all concurrent requests)
+Transfer rate:          15279.48 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.4      0      20
+Processing:    10   75 220.1     46    5590
+Waiting:        0   75 219.9     46    5578
+Total:         10   75 220.2     46    5592
+
+Percentage of the requests served within a certain time (ms)
+  50%     46
+  66%     50
+  75%     52
+  80%     54
+  90%     65
+  95%    286
+  98%    314
+  99%    548
+ 100%   5592 (longest request)
+```
 
 ## 正则表达式
 
@@ -223,6 +421,19 @@ C++ [正则表达式库](https://zh.cppreference.com/w/cpp/regex)
 ## mysql
 
 mysql库：`sudo apt install libmysqlclient-dev`
+
+## 异常
+
+#### 异常保证
+
+- 不抛出异常保证（Nothrow exception guarantee）：函数决不抛出异常。
+- 强异常保证（Strong exception guarantee）：若函数抛出异常，则程序的状态被回滚到正好在函数调用前的状态。
+- 基础异常保证（Basic exception guarantee）：若函数抛出异常，则程序在合法状态。它可能需要清理，但所有不变量都原封不动。
+- 无异常保证（No exception guarantee）：若函数抛出异常，则程序可能不在合法状态：可能已经发生了资源泄漏、内存谬误，或其他摧毁不变量的错误。
+
+#### ThreadPool 的异常安全
+
+构造函数抛出异常时，所有已经构造好的成员会调用析构，而自身不会调用析构，所以 `ThreadPool` 在构造成员时是无异常的，而在构造函数体里创建线程时，如果发生异常，需要将 `stop_` 停止标志置 1，并唤醒所有线程，又由于 成员变量 `threads_` 已经构造成功，会调用析构，所以能调用 `std::jthread` 的析构 join 线程。这样就能保证强异常安全
 
 ## 难点
 

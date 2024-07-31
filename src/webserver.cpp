@@ -84,7 +84,7 @@ void WebServer::init_resource() {
     add_fd(listen_fd_, true, false);
     add_fd(STDIN_FILENO, true, false);
 
-    thread_pool_ = std::make_unique<decltype(thread_pool_)::element_type>();
+    thread_pool_ = std::make_unique<decltype(thread_pool_)::element_type>(MAX_CONN_CNT_);
     events_ = std::make_unique_for_overwrite<decltype(events_)::element_type[]>(MAX_CONN_CNT_);
     mem_pool_ = decltype(mem_pool_)(MAX_CONN_CNT_);
 }

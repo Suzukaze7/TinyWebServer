@@ -1,10 +1,9 @@
+#pragma once
 #include "logger.hpp"
 #include <cstddef>
-#include <deque>
 #include <memory>
-#include <numeric>
-#include <tuple>
 #include <utility>
+#include <vector>
 
 namespace suzukaze {
 
@@ -14,23 +13,34 @@ class MemoryPool {
     T *pool_;
     std::size_t *stk_;
     std::size_t top_;
+    std::vector<bool> book_;
+
+    template <typename U>
+    auto alloc() -> U * {
+        return std::allocator<U>().allocate(size_);
+    }
+
+    template <typename U>
+    void dealloc(U *ptr) {
+        std::allocator<U>().deallocate(ptr, size_);
+    }
 
     void clear() noexcept {
-        if (size_) {
-            std::allocator<T>().deallocate(pool_, size_);
-            std::allocator<std::size_t>().deallocate(stk_, size_);
-            size_ = top_ = 0;
-            pool_ = nullptr, stk_ = nullptr;
-        }
+        if (pool_)
+            dealloc(pool_);
+        if (stk_)
+            dealloc(stk_);
+        size_ = top_ = 0;
+        pool_ = nullptr, stk_ = nullptr;
     }
 
 public:
     MemoryPool() : size_(0), pool_(nullptr), stk_(nullptr), top_(0) {}
 
     MemoryPool(std::size_t n)
-        : size_(n), pool_(std::allocator<T>().allocate(n)),
-          stk_(std::allocator<std::size_t>().allocate(n)), top_(n) {
-        std::iota(stk_, stk_ + n, static_cast<size_t>(0));
+        : size_(n), pool_(alloc<T>()), stk_(alloc<std::size_t>()), top_(), book_(n) {
+        for (; top_ < size_; top_++)
+            stk_[top_] = top_;
     }
 
     MemoryPool(MemoryPool &&oth) noexcept {
@@ -38,13 +48,21 @@ public:
         swap(oth);
     }
 
-    ~MemoryPool() { clear(); }
+    ~MemoryPool() {
+        for (std::size_t i = 0; i < size_; i++)
+            book_[i] = true;
+        for (std::size_t i = 0; i < size_; i++)
+            if (!book_[i])
+                std::destroy_at(pool_ + i);
+        clear();
+    }
 
     void swap(MemoryPool &oth) noexcept {
         std::swap(size_, oth.size_);
         std::swap(pool_, oth.pool_);
         std::swap(stk_, oth.stk_);
         std::swap(top_, oth.top_);
+        book_.swap(oth.book_);
     }
 
     MemoryPool &operator=(MemoryPool oth) noexcept {
@@ -52,13 +70,13 @@ public:
         return *this;
     }
 
-    bool empty() noexcept { return !top_; }
+    auto empty() noexcept -> bool { return !top_; }
 
     template <typename... Args>
-    T *allocate(Args &&...args) noexcept {
-        auto p = pool_ + stk_[--top_];
-        std::construct_at(p, std::forward<Args>(args)...);
-        return p;
+    T *allocate(Args &&...args) {
+        auto ptr = std::construct_at(pool_ + stk_[top_ - 1], std::forward<Args>(args)...);
+        top_--;
+        return ptr;
     }
 
     void deallocate(T *ptr) noexcept {
