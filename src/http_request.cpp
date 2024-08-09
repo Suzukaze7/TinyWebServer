@@ -4,21 +4,21 @@
 #include "include/json.h"
 
 namespace suzukaze {
-auto HttpRequest::get_param(const std::string &key) const noexcept -> const std::string & {
+const std::string &HttpRequest::get_param(const std::string &key) const noexcept {
     return info_.params_.at(key);
 }
 
-auto HttpRequest::get_header(const std::string &key) const noexcept -> const std::string & {
+const std::string &HttpRequest::get_header(const std::string &key) const noexcept {
     return info_.headers_.at(key);
 }
 
-auto HttpRequest::get_url() const noexcept -> const std::string & { return info_.url_; }
+const std::string &HttpRequest::get_url() const noexcept { return info_.url_; }
 
-auto HttpRequest::get_scheme() const noexcept -> const std::string & { return info_.scheme_; }
+const std::string &HttpRequest::get_scheme() const noexcept { return info_.scheme_; }
 
-auto HttpRequest::get_body() const noexcept -> const std::string & { return info_.body_; }
+const std::string &HttpRequest::get_body() const noexcept { return info_.body_; }
 
-auto HttpRequest::get_json() const -> json::Value {
+json::Value HttpRequest::get_json() const {
     if (!info_.headers_.contains(CONTENT_TYPE) || info_.headers_.at(CONTENT_TYPE) != JSON_TYPE)
         throw HandlerException("request body isn't json");
 

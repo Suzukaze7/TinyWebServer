@@ -376,40 +376,6 @@ Percentage of the requests served within a certain time (ms)
  100%   6072 (longest request)
 ```
 
-#### 手写队列加上内存池后
-
-```
-Concurrency Level:      2000
-Time taken for tests:   22.050 seconds
-Complete requests:      500000
-Failed requests:        0
-Keep-Alive requests:    500000
-Total transferred:      345000000 bytes
-HTML transferred:       293000000 bytes
-Requests per second:    22675.63 [#/sec] (mean)
-Time per request:       88.200 [ms] (mean)
-Time per request:       0.044 [ms] (mean, across all concurrent requests)
-Transfer rate:          15279.48 [Kbytes/sec] received
-
-Connection Times (ms)
-              min  mean[+/-sd] median   max
-Connect:        0    0   0.4      0      20
-Processing:    10   75 220.1     46    5590
-Waiting:        0   75 219.9     46    5578
-Total:         10   75 220.2     46    5592
-
-Percentage of the requests served within a certain time (ms)
-  50%     46
-  66%     50
-  75%     52
-  80%     54
-  90%     65
-  95%    286
-  98%    314
-  99%    548
- 100%   5592 (longest request)
-```
-
 ## 正则表达式
 
 语法：[C++正则表达式全攻略：从基础到高级应用](https://blog.csdn.net/Long_xu/article/details/135306358)
@@ -417,6 +383,15 @@ Percentage of the requests served within a certain time (ms)
 C++ [正则表达式库](https://zh.cppreference.com/w/cpp/regex)
 
 对于 `std::regex_search` 的匹配逻辑可以理解成匹配最左侧合法的子串
+
+## 信号
+
+1. 如果是异常产生的信号（比如程序错误，像SIGPIPE、SIGEGV这些），则只有产生异常的线程收到并处理。
+2. 如果是用pthread_kill产生的内部信号，则只有pthread_kill参数中指定的目标线程收到并处理。
+3. 如果是外部使用kill命令产生的信号，通常是SIGINT、SIGHUP等job control信号，则会遍历所有线程，直到找到一个不阻塞该信号的线程，然后调用它来处理。(一般从主线程找起)，注意只有一个线程能收到。
+4. 其次，每个线程都有自己独立的signal mask，但所有线程共享进程的signal action。这意味着，你可以在线程中调用pthread_sigmask(不是sigmask)来决定本线程阻塞哪些信号。但你不能调用sigaction来指定单个线程的信号处理方式。如果在某个线程中调用了sigaction处理某个信号，那么这个进程中的未阻塞这个信号的所有线程在收到这个信号都会按同一种方式处理这个信号。另外，注意子线程的mask是会从主线程继承而来的。
+
+[菜鸟教程 sigaction()](https://www.runoob.com/cprogramming/c-function-sigaction.html)
 
 ## mysql
 
@@ -434,6 +409,21 @@ mysql库：`sudo apt install libmysqlclient-dev`
 #### ThreadPool 的异常安全
 
 构造函数抛出异常时，所有已经构造好的成员会调用析构，而自身不会调用析构，所以 `ThreadPool` 在构造成员时是无异常的，而在构造函数体里创建线程时，如果发生异常，需要将 `stop_` 停止标志置 1，并唤醒所有线程，又由于 成员变量 `threads_` 已经构造成功，会调用析构，所以能调用 `std::jthread` 的析构 join 线程。这样就能保证强异常安全
+
+## 内存管理
+
+#### 内存对齐
+
+Q: 一般什么情况下会出现内存对齐超过8
+A: 原子(比如 `std::atomic`)，其他的一些线程安全的东西里也可能存在
+A: 手动指定的时候(例如：`#pragma pack (n)`)。另外有些 64 位平台上 long double 的对齐是 16
+
+构造函数初始化列表中可以取未初始化成员地址
+
+#### operator new/delete
+
+- 类重载默认 `static`
+- `delete` 指向子类的基类指针，没有虚析构是 ub，反之 `delete` 可以找到正确的 `operator delete`
 
 ## 难点
 

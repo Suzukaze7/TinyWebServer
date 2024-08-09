@@ -29,7 +29,7 @@ public:
 
     void add_handler(RequestMethod method, std::string_view url, Handler handler);
 
-    auto get_handler(RequestMethod method, std::string_view url) -> Handler &;
+    Handler &get_handler(RequestMethod method, std::string_view url);
 };
 
 class RootRouter : public Router {
@@ -41,10 +41,10 @@ class RootRouter : public Router {
     std::filesystem::path static_dir_;
 
 public:
-    RootRouter(std::string static_dir) noexcept : static_dir_(std::move(static_dir)) {}
+    explicit RootRouter(std::string static_dir) noexcept : static_dir_(std::move(static_dir)) {}
 
-    auto get_handler(RequestMethod method, std::string_view url) -> Handler &;
+    Handler &get_handler(RequestMethod method, std::string_view url);
 
-    auto real_file_path(std::string_view url) noexcept -> std::filesystem::path;
+    std::filesystem::path real_file_path(std::string_view url) noexcept;
 };
 } // namespace suzukaze

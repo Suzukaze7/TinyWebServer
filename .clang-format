@@ -7,3 +7,10 @@ IncludeBlocks: Merge
 IndentWidth: 4
 TabWidth: 4
 UseCRLF: true
+
+# 是否打包构造函数初始化列表:
+# - Never: 永远不做操作, 即一个参数一行
+# - BinPack: 两个参数一行
+# - CurrentLine: 所有参数放置于一行, 如果放不下, 就一个参数一行
+# - NextLine: 同CurrentLine有点像, 唯一不同就是如果放不行, 将剩余参数放置于下一行(即不自动一参一行)
+PackConstructorInitializers: BinPack

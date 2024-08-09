@@ -21,6 +21,12 @@ public:
 #endif
 
     template <typename... Args>
+    static void log(std::format_string<Args...> fmt, Args &&...args) noexcept {
+        auto s = std::format(fmt, std::forward<Args>(args)...);
+        std::cout << s << std::endl;
+    }
+
+    template <typename... Args>
     void log(Level l, std::format_string<Args...> fmt, Args &&...args) noexcept {
         if (to_underlying(l) >= to_underlying(level_)) {
             auto s = std::format(fmt, std::forward<Args>(args)...);

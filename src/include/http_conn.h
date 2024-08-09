@@ -2,9 +2,12 @@
 #include "http_request.h"
 #include "http_response.h"
 #include "logger.hpp"
+#include "memory_pool.hpp"
 #include "router.h"
+#include "timer_wheel.h"
 #include "type.h"
 #include <bits/types/struct_iovec.h>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <sys/mman.h>
@@ -17,7 +20,7 @@ enum class ParseStatus { CONTINUE, NOT_FINISH, FINISH };
 enum class SendStatus { NOT_FINISH, CLOSE, KEEP_ALIVE };
 
 class HttpConn {
-    inline static const std::map<StatusCode, std::pair<std::uint16_t, std::string>> STATUS_INFO = {
+    static inline const std::map<StatusCode, std::pair<std::uint16_t, std::string>> STATUS_INFO = {
         {StatusCode::OK, {200, "OK"}},
         {StatusCode::BAD_REQUEST, {400, "Bad Request"}},
         {StatusCode::NOT_FOUND, {404, "Not Found"}},
@@ -28,33 +31,47 @@ class HttpConn {
     Logger &logger_;
     RootRouter &router_;
 
-    std::string host_;
+public:
+    TimerWheel::Pointer task_ptr_;
+
+private:
+    const fd_t conn_fd_;
+    const std::string host_;
     bool keep_alive_;
     RequestInfo req_;
     ResponseInfo resp_;
 
-    auto equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept -> bool;
-    auto getline() noexcept -> bool;
-    auto parse_request_line() noexcept -> ParseStatus;
-    auto parse_header() noexcept -> ParseStatus;
-    auto parse_body() noexcept -> ParseStatus;
+    bool equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept;
+    bool getline() noexcept;
+    ParseStatus parse_request_line() noexcept;
+    ParseStatus parse_header() noexcept;
+    ParseStatus parse_body() noexcept;
     void process_body() noexcept;
     void process_status_line() noexcept;
     void process_header() noexcept;
 
 public:
-    HttpConn(Logger &logger, RootRouter &router, std::string host) noexcept
-        : logger_(logger), router_(router), host_(std::move(host)) {}
+    HttpConn(Logger &logger, RootRouter &router, TimerWheel::Pointer task_ptr, fd_t conn_fd,
+             std::string host) noexcept
+        : logger_(logger), router_(router), task_ptr_(task_ptr), conn_fd_(conn_fd),
+          host_(std::move(host)) {}
+    HttpConn(HttpConn &) = delete;
 
     ~HttpConn() {
         if (resp_.is_file_)
             munmap(resp_.file_ptr_, resp_.file_size_);
     }
 
-    auto host() -> std::string &&;
-    auto receive(fd_t fd) -> bool;
-    auto parse_request() noexcept -> ParseStatus;
+    void *operator new(std::size_t) { return MemoryPool<HttpConn>::get_instance().allocate(); }
+
+    void operator delete(void *ptr) noexcept {
+        MemoryPool<HttpConn>::get_instance().deallocate(ptr);
+    }
+
+    bool receive();
+    ParseStatus parse_request() noexcept;
     void process() noexcept;
-    auto send(fd_t fd) -> SendStatus;
+    SendStatus send() noexcept;
+    void clear() noexcept;
 };
 } // namespace suzukaze

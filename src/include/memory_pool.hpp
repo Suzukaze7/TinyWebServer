@@ -1,87 +1,96 @@
 #pragma once
 #include "logger.hpp"
 #include <cstddef>
+#include <deque>
+#include <list>
 #include <memory>
+#include <stack>
 #include <utility>
 #include <vector>
 
 namespace suzukaze {
-
 template <typename T>
 class MemoryPool {
-    std::size_t size_;
-    T *pool_;
-    std::size_t *stk_;
-    std::size_t top_;
-    std::vector<bool> book_;
+    using alloc = std::allocator<T>;
 
-    template <typename U>
-    auto alloc() -> U * {
-        return std::allocator<U>().allocate(size_);
-    }
+    static constexpr std::size_t INCREASEMENT = 2;
 
-    template <typename U>
-    void dealloc(U *ptr) {
-        std::allocator<U>().deallocate(ptr, size_);
-    }
+    struct Chunk {
+        T *pool_;
+        std::size_t size_, cur_;
 
-    void clear() noexcept {
-        if (pool_)
-            dealloc(pool_);
-        if (stk_)
-            dealloc(stk_);
-        size_ = top_ = 0;
-        pool_ = nullptr, stk_ = nullptr;
-    }
+        Chunk() : pool_(), size_(), cur_() {}
+        Chunk(std::size_t n) : pool_(alloc().allocate(n)), size_(n), cur_(0) {}
+        Chunk(Chunk &&oth) : Chunk() { swap(oth); }
+
+        ~Chunk() {
+            if (pool_) {
+                alloc().deallocate(pool_, size_);
+                pool_ = nullptr;
+                size_ = cur_ = 0;
+            }
+        }
+
+        Chunk &operator=(Chunk oth) noexcept {
+            swap(oth);
+            return *this;
+        }
+
+        void swap(Chunk &oth) noexcept {
+            std::swap(pool_, oth.pool_);
+            std::swap(size_, oth.size_);
+            std::swap(cur_, oth.cur_);
+        }
+    };
+
+    std::list<Chunk> ls_;
+    Chunk cur_chunk_;
+    std::stack<T *, std::vector<T *>> stk_;
+
+    MemoryPool() = default;
+    MemoryPool(MemoryPool &) = delete;
 
 public:
-    MemoryPool() : size_(0), pool_(nullptr), stk_(nullptr), top_(0) {}
-
-    MemoryPool(std::size_t n)
-        : size_(n), pool_(alloc<T>()), stk_(alloc<std::size_t>()), top_(), book_(n) {
-        for (; top_ < size_; top_++)
-            stk_[top_] = top_;
+    static MemoryPool &get_instance() noexcept {
+        static MemoryPool instance;
+        return instance;
     }
 
-    MemoryPool(MemoryPool &&oth) noexcept {
-        clear();
-        swap(oth);
-    }
+    T *allocate() {
+        if (stk_.empty()) {
+            if (!cur_chunk_.size_)
+                cur_chunk_ = {1}; // rvo
+            else {
+                ls_.push_back(std::move(cur_chunk_));
+                cur_chunk_ = {ls_.back().size_ * INCREASEMENT};
+            }
 
-    ~MemoryPool() {
-        for (std::size_t i = 0; i < size_; i++)
-            book_[i] = true;
-        for (std::size_t i = 0; i < size_; i++)
-            if (!book_[i])
-                std::destroy_at(pool_ + i);
-        clear();
-    }
+            auto &[pool, size, _] = cur_chunk_;
+            for (std::size_t i = 0; i < size; i++)
+                stk_.push(pool + i);
+        }
 
-    void swap(MemoryPool &oth) noexcept {
-        std::swap(size_, oth.size_);
-        std::swap(pool_, oth.pool_);
-        std::swap(stk_, oth.stk_);
-        std::swap(top_, oth.top_);
-        book_.swap(oth.book_);
-    }
-
-    MemoryPool &operator=(MemoryPool oth) noexcept {
-        swap(oth);
-        return *this;
-    }
-
-    auto empty() noexcept -> bool { return !top_; }
-
-    template <typename... Args>
-    T *allocate(Args &&...args) {
-        auto ptr = std::construct_at(pool_ + stk_[top_ - 1], std::forward<Args>(args)...);
-        top_--;
-        return ptr;
+        T *p = stk_.top();
+        stk_.pop();
+        return p;
     }
 
     void deallocate(T *ptr) noexcept {
-        std::destroy_at(ptr);
-        stk_[top_++] = ptr - pool_;
+        auto &[pool, size, _] = cur_chunk_;
+        if (pool <= ptr && ptr < pool + size)
+            stk_.push(ptr);
+        else {
+            for (auto it = ls_.begin(); it != ls_.end(); it++) {
+                auto &[pool, size, cur] = *it;
+                if (pool <= ptr && ptr < pool + size) {
+                    if (++cur == size)
+                        ls_.erase(it);
+                    break;
+                }
+            }
+        }
     }
+
+    void deallocate(void *ptr) noexcept { deallocate(static_cast<T *>(ptr)); }
 };
 } // namespace suzukaze

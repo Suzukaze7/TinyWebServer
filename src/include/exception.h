@@ -1,19 +1,10 @@
 #pragma once
+#include <cstring>
 #include <exception>
 #include <string>
+#include <utility>
 
 namespace suzukaze {
-class SocketException : public std::exception {
-    std::string msg_;
-
-public:
-    SocketException() noexcept(noexcept(std::string())) = default;
-    SocketException(std::string msg) noexcept : msg_(msg) {}
-    SocketException(std::string addr, std::string msg) : msg_(addr + " " + msg) {}
-
-    const char *what() const noexcept override { return msg_.c_str(); }
-};
-
 class UrlException : public std::exception {
     std::string msg_;
 

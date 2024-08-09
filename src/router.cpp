@@ -26,7 +26,7 @@ void Router::add_handler(RequestMethod method, std::string_view url, Handler han
     ptr->handlers_[type_idx] = std::move(handler);
 }
 
-auto Router::get_handler(RequestMethod method, std::string_view url) -> Handler & {
+Handler &Router::get_handler(RequestMethod method, std::string_view url) {
     std::filesystem::path path(url.substr(1));
     auto type_idx = to_underlying(method);
     auto ptr = root_;
@@ -44,7 +44,7 @@ auto Router::get_handler(RequestMethod method, std::string_view url) -> Handler 
     return ptr->handlers_[type_idx];
 }
 
-auto RootRouter::get_handler(RequestMethod method, std::string_view url) -> Handler & {
+Handler &RootRouter::get_handler(RequestMethod method, std::string_view url) {
     try {
         return Router::get_handler(method, url);
     } catch (UrlException &e) {
@@ -54,7 +54,7 @@ auto RootRouter::get_handler(RequestMethod method, std::string_view url) -> Hand
     }
 }
 
-auto RootRouter::real_file_path(std::string_view url) noexcept -> std::filesystem::path {
+std::filesystem::path RootRouter::real_file_path(std::string_view url) noexcept {
     return static_dir_ / url;
 }
 

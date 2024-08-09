@@ -12,7 +12,7 @@
 
 namespace suzukaze {
 namespace json {
-auto Value::operator[](std::size_t idx) -> Value & {
+Value &Value::operator[](std::size_t idx) {
     try {
         return get<Array>().at(idx);
     } catch (std::out_of_range &e) {
@@ -20,7 +20,7 @@ auto Value::operator[](std::size_t idx) -> Value & {
     }
 }
 
-auto Value::operator[](const String &key) -> Value & {
+Value &Value::operator[](const String &key) {
     try {
         return get<Object>().at(key);
     } catch (std::out_of_range &e) {
@@ -28,13 +28,13 @@ auto Value::operator[](const String &key) -> Value & {
     }
 }
 
-auto Parser::create_token(TokenType type, std::size_t len) -> Token {
+Parser::Token Parser::create_token(TokenType type, std::size_t len) {
     auto value = json_.substr(0, len);
     json_.remove_prefix(len);
     return {type, value};
 }
 
-auto Parser::next_token() -> Token {
+Parser::Token Parser::next_token() {
     json_.remove_prefix(std::ranges::find_if_not(json_, isspace) - json_.begin());
 
     if (json_.empty())
@@ -92,7 +92,7 @@ void Parser::consume(TokenType expected) {
     cur_token_ = next_token();
 }
 
-auto Parser::parse_object() -> Value {
+Value Parser::parse_object() {
     consume(TokenType::LEFT_BRACE);
     Object obj;
     while (true) {
@@ -114,7 +114,7 @@ auto Parser::parse_object() -> Value {
     }
 }
 
-auto Parser::parse_array() -> Value {
+Value Parser::parse_array() {
     consume(TokenType::LEFT_BRACKET);
     Array arr;
     while (true) {
@@ -132,14 +132,14 @@ auto Parser::parse_array() -> Value {
     }
 }
 
-auto Parser::parse_string() -> Value {
+Value Parser::parse_string() {
     auto &v = cur_token_.val_;
     String s(std::next(v.begin()), std::prev(v.end()));
     consume(TokenType::STRING);
     return std::move(s);
 }
 
-auto Parser::parse_int() -> Value {
+Value Parser::parse_int() {
     auto &v = cur_token_.val_;
     Int resi;
     std::from_chars(v.data(), v.data() + v.size(), resi);
@@ -147,7 +147,7 @@ auto Parser::parse_int() -> Value {
     return resi;
 }
 
-auto Parser::parse_float() -> Value {
+Value Parser::parse_float() {
     auto &v = cur_token_.val_;
     Float resf;
     std::from_chars(v.data(), v.data() + v.size(), resf);
@@ -155,13 +155,13 @@ auto Parser::parse_float() -> Value {
     return resf;
 }
 
-auto Parser::parse_bool() -> Value {
+Value Parser::parse_bool() {
     Bool b = cur_token_.val_.size() == 4;
     consume(TokenType::BOOL);
     return b;
 }
 
-auto Parser::parse_value() -> Value {
+Value Parser::parse_value() {
     switch (cur_token_.type_) {
     case TokenType::LEFT_BRACE:
         return parse_object();
@@ -183,7 +183,7 @@ auto Parser::parse_value() -> Value {
     }
 }
 
-auto Parser::parse(view json) -> Value {
+Value Parser::parse(view json) {
     json_ = json;
     cur_token_ = next_token();
     return parse_value();

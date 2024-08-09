@@ -17,7 +17,7 @@ struct ResponseInfo {
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
     std::string send_header_;
-    bool is_file_ = false;
+    bool is_file_{};
     void *file_ptr_;
     std::size_t file_size_;
     iovec vec_[2]{};

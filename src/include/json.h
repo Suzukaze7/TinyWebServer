@@ -27,30 +27,30 @@ class Value : private Base {
 public:
     using Base::variant;
 
-    auto operator[](std::size_t idx) -> Value &;
-    auto operator[](const String &key) -> Value &;
+    Value &operator[](std::size_t idx);
+    Value &operator[](const String &key);
 
     template <typename T>
-    auto get() -> T & {
+    T &get() {
         if (auto ptr = std::get_if<T>(this))
             return *ptr;
         throw JsonException("type error");
     }
 
     template <typename T>
-    auto get() const -> const T & {
+    const T &get() const {
         if (auto ptr = std::get_if<T>(this))
             return *ptr;
         throw JsonException("type error");
     }
 
     template <typename T>
-    auto get_if() -> T * {
+    T *get_if() {
         return std::get_if<T>(this);
     }
 
     template <typename T>
-    auto get_if() const -> const T * {
+    const T *get_if() const {
         return std::get_if<T>(this);
     }
 };
@@ -81,20 +81,20 @@ class Parser {
     view json_;
     Token cur_token_;
 
-    auto create_token(TokenType type, std::size_t len = 1) -> Token;
-    auto next_token() -> Token;
+    Token create_token(TokenType type, std::size_t len = 1);
+    Token next_token();
 
     void consume(TokenType expected);
-    auto parse_value() -> Value;
-    auto parse_object() -> Value;
-    auto parse_array() -> Value;
-    auto parse_string() -> Value;
-    auto parse_int() -> Value;
-    auto parse_float() -> Value;
-    auto parse_bool() -> Value;
+    Value parse_value();
+    Value parse_object();
+    Value parse_array();
+    Value parse_string();
+    Value parse_int();
+    Value parse_float();
+    Value parse_bool();
 
 public:
-    auto parse(view json) -> Value;
+    Value parse(view json);
 };
 
 class Serializer {

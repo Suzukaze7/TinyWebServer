@@ -1,41 +1,32 @@
+#include "src/include/container.hpp"
 #include "src/include/exception.h"
 #include "src/include/header.h"
 #include "src/include/http_conn.h"
 #include "src/include/http_request.h"
 #include "src/include/http_response.h"
 #include "src/include/json.h"
-#include "src/include/thread_pool.hpp"
+#include "src/include/thread_pool.h"
 #include "src/include/webserver.h"
-#include <filesystem>
-#include <cstddef>
-#include <format>
-#include <iostream>
-#include <random>
-#include <regex>
-#include <string>
-#include <thread>
-#include <type_traits>
-#include <utility>
 
 using namespace std::literals::chrono_literals;
 
-constexpr int N = 10000;
-
-void test_queue() {
-    suzukaze::Queue<int> que(N);
+void test_dlist() {
+    suzukaze::DList<int> ls;
     for (std::size_t cnt = 1; cnt <= 10; cnt++) {
         for (std::size_t i = 1; i <= 10; i++)
-            que.push(i);
-        while (!que.empty())
-            std::cout << que.pop() << " ";
+            ls.push_back(i);
+        while (!ls.empty()) {
+            std::cout << ls.front() << " ";
+            ls.pop_front();
+        }
         std::cout << std::endl;
     }
 }
 
 void test_thread_pool() {
-    suzukaze::ThreadPool tp(N);
+    suzukaze::ThreadPool tp;
 
-    for (std::size_t i = 1; i <= N; i++)
+    for (std::size_t i = 1; i <= 1000; i++)
         tp.submit([] {
             static int i = 0;
             std::cout << i++ << std::endl;
@@ -89,7 +80,7 @@ void test_webserver() {
 }
 
 int main() {
-    // test_queue();
+    // test_dlist();
     // test_thread_pool();
     // test_json()
     test_webserver();

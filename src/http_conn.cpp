@@ -7,6 +7,7 @@
 #include "include/utils.h"
 #include <cerrno>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
@@ -24,29 +25,27 @@
 namespace suzukaze {
 using namespace std::string_view_literals;
 
-auto HttpConn::host() -> std::string && { return std::move(host_); }
-
-auto HttpConn::receive(fd_t fd) -> bool {
+bool HttpConn::receive() {
     static constexpr std::size_t LEN = 1500;
     static char buf[LEN];
 
     ssize_t cnt;
-    while ((cnt = read(fd, buf, LEN)) > 0)
+    while ((cnt = read(conn_fd_, buf, LEN)) > 0)
         req_.msg_.append(buf, cnt);
 
     if (errno != EAGAIN) {
-        logger_.debug("HttpConn::receive error: {}", error());
+        logger_.debug("HttpConn::receive error: {}", strerror(errno));
         return true;
     }
 
     return !cnt;
 }
 
-auto HttpConn::equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept -> bool {
+bool HttpConn::equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept {
     return std::ranges::equal(lhs, rhs, std::equal_to<>(), tolower);
 }
 
-auto HttpConn::getline() noexcept -> bool {
+bool HttpConn::getline() noexcept {
     auto &idx = req_.idx_;
     auto &msg = req_.msg_;
     auto &line = req_.line_;
@@ -61,7 +60,7 @@ auto HttpConn::getline() noexcept -> bool {
     return false;
 }
 
-auto HttpConn::parse_request_line() noexcept -> ParseStatus {
+ParseStatus HttpConn::parse_request_line() noexcept {
     req_.req_line_ = std::move(req_.line_);
     auto &line = req_.req_line_;
 
@@ -99,13 +98,13 @@ auto HttpConn::parse_request_line() noexcept -> ParseStatus {
     }
 
     req_.scheme_ = res[3];
-    keep_alive_ = (req_.scheme_ > "HTTP/1.0"sv); // 加上 sv 就没有 std::string 复制开销？
+    keep_alive_ = (req_.scheme_ > "HTTP/1.0"sv); // 加上 sv 就没有 std::string 构造开销？
 
     req_.parse_step_ = ParseStep::HEADER;
     return ParseStatus::CONTINUE;
 }
 
-auto HttpConn::parse_header() noexcept -> ParseStatus {
+ParseStatus HttpConn::parse_header() noexcept {
     auto &line = req_.line_;
 
     if (line.empty()) {
@@ -138,14 +137,14 @@ auto HttpConn::parse_header() noexcept -> ParseStatus {
     return ParseStatus::CONTINUE;
 }
 
-auto HttpConn::parse_body() noexcept -> ParseStatus {
+ParseStatus HttpConn::parse_body() noexcept {
     req_.body_ += req_.line_;
     if (req_.body_.size() < req_.content_length_)
         return ParseStatus::NOT_FINISH;
     return ParseStatus::FINISH;
 }
 
-auto HttpConn::parse_request() noexcept -> ParseStatus {
+ParseStatus HttpConn::parse_request() noexcept {
     auto &parse_step = req_.parse_step_;
 
     while (getline() || parse_step == ParseStep::BODY) {
@@ -246,12 +245,12 @@ void HttpConn::process() noexcept {
     logger_.info("request: {} {} {} {}", host_, req_.req_line_, code, info);
 }
 
-SendStatus HttpConn::send(fd_t fd) {
+SendStatus HttpConn::send() noexcept {
     auto &vec = resp_.vec_;
     std::size_t idx = 0;
 
     ssize_t cnt;
-    while ((vec[0].iov_len || vec[1].iov_len) && (cnt = writev(fd, vec + idx, 2 - idx)) > 0) {
+    while ((vec[0].iov_len || vec[1].iov_len) && (cnt = writev(conn_fd_, vec + idx, 2 - idx)) > 0) {
         for (auto i = idx; cnt; i++) {
             auto len = std::min<std::size_t>(vec[i].iov_len, cnt);
             vec[i].iov_base = static_cast<std::int8_t *>(vec[i].iov_base) + len;
@@ -270,4 +269,6 @@ SendStatus HttpConn::send(fd_t fd) {
         return SendStatus::NOT_FINISH;
     return keep_alive_ ? SendStatus::KEEP_ALIVE : SendStatus::CLOSE;
 }
+
+void HttpConn::clear() noexcept { req_ = {}, resp_ = {}; }
 } // namespace suzukaze
