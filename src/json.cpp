@@ -1,17 +1,12 @@
 #include "include/json.h"
 #include "include/exception.h"
 #include <charconv>
-#include <exception>
 #include <format>
-#include <iostream>
 #include <iterator>
-#include <memory>
 #include <string_view>
-#include <system_error>
 #include <utility>
 
-namespace suzukaze {
-namespace json {
+namespace suzukaze::json {
 Value &Value::operator[](std::size_t idx) {
     try {
         return get<Array>().at(idx);
@@ -235,6 +230,4 @@ std::string Serializer::serialize(const Value &val) {
     serialize_value(val);
     return std::move(json_);
 }
-
-} // namespace json
-} // namespace suzukaze
+} // namespace suzukaze::json

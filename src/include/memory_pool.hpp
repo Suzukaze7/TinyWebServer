@@ -1,7 +1,5 @@
 #pragma once
-#include "logger.hpp"
 #include <cstddef>
-#include <deque>
 #include <list>
 #include <memory>
 #include <stack>
@@ -20,7 +18,7 @@ class MemoryPool {
         std::size_t size_, cur_;
 
         Chunk() : pool_(), size_(), cur_() {}
-        Chunk(std::size_t n) : pool_(alloc().allocate(n)), size_(n), cur_(0) {}
+        explicit Chunk(std::size_t n) : pool_(alloc().allocate(n)), size_(n), cur_(0) {}
         Chunk(Chunk &&oth) : Chunk() { swap(oth); }
 
         ~Chunk() {

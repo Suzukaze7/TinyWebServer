@@ -1,12 +1,9 @@
 #pragma once
 
 #include "json.h"
-#include "type.h"
 #include <bits/types/struct_iovec.h>
 #include <cstddef>
-#include <cstdint>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 
 namespace suzukaze {

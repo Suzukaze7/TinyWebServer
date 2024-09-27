@@ -1,10 +1,8 @@
 #pragma once
 #include "memory_pool.hpp"
 #include <cstddef>
-#include <iostream>
 #include <iterator>
 #include <utility>
-#include <vector>
 
 namespace suzukaze {
 template <typename T>

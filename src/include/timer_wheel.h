@@ -1,17 +1,14 @@
 #pragma once
 #include "container.hpp"
-#include "type.h"
-#include "utils.h"
-#include <bits/types/siginfo_t.h>
-#include <bits/types/timer_t.h>
-#include <cstddef>
-#include <ctime>
+#include <array>
+#include <coroutine>
+#include <cstdint>
 #include <functional>
-#include <unistd.h>
-#include <vector>
+#include <semaphore>
+#include <stop_token>
+#include <thread>
 
 namespace suzukaze {
-
 class TimerWheel {
 public:
     using Task = std::function<void()>;
@@ -25,31 +22,49 @@ public:
 
         TaskList::iterator it_;
 
-        Pointer(TaskList::iterator it) noexcept : it_(it) {}
+        explicit Pointer(TaskList::iterator it) noexcept : it_(it) {}
 
     public:
         Pointer() = default;
     };
 
 private:
-    std::time_t period_;
-    int pipe_fd_[2];
-    timer_t timer_;
-    std::vector<TaskList> wheel_;
-    std::size_t idx_;
+    struct Result {
+        struct Promise;
 
-    static void sig_handler(int sig, siginfo_t *info, void *);
+        using promise_type = Promise;
+        using Handle = std::coroutine_handle<promise_type>;
+
+        struct Promise {
+            std::suspend_never initial_suspend() noexcept { return {}; }
+            std::suspend_never final_suspend() noexcept { return {}; }
+            Result get_return_object() {
+                return {std::coroutine_handle<Promise>::from_promise(*this)};
+            }
+            void unhandled_exception() {}
+        };
+
+        Handle handle_;
+    };
+
+private:
+    static constexpr std::size_t Period = 60;
+
+    std::array<TaskList, Period> wheel_;
+    std::uint8_t idx_;
+    std::jthread timer_thread_;
+    std::binary_semaphore sema_;
+
+private:
+    static void timer(std::stop_token token, std::binary_semaphore &sema, Result::Handle handle);
+
+    Result solve_task();
 
 public:
-    explicit TimerWheel(std::time_t period = 1, std::size_t wheel_len = 60) noexcept;
+    TimerWheel();
 
-    ~TimerWheel();
-
-    fd_t read_fd() noexcept;
     Pointer add_task(Task task);
     void erase_task(Pointer ptr) noexcept;
     void modify_task(Pointer &ptr) noexcept;
-    void solve_task() noexcept;
-    void start() noexcept;
 };
 } // namespace suzukaze

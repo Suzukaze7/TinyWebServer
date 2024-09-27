@@ -5,13 +5,10 @@
 #include "memory_pool.hpp"
 #include "router.h"
 #include "timer_wheel.h"
-#include "type.h"
 #include <bits/types/struct_iovec.h>
 #include <cstddef>
 #include <string>
 #include <string_view>
-#include <sys/mman.h>
-#include <type_traits>
 #include <unistd.h>
 #include <utility>
 

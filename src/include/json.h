@@ -8,8 +8,7 @@
 #include <variant>
 #include <vector>
 
-namespace suzukaze {
-namespace json {
+namespace suzukaze::json {
 class Value;
 
 using Null = std::monostate;
@@ -109,5 +108,4 @@ class Serializer {
 public:
     std::string serialize(const Value &val);
 };
-} // namespace json
-} // namespace suzukaze
+} // namespace suzukaze::json

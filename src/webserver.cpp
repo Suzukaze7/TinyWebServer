@@ -46,23 +46,6 @@ void WebServer::mod_fd(fd_t fd, bool in) noexcept {
     epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &event);
 }
 
-void WebServer::create_listen() noexcept {
-    addrinfo hint{}, *result;
-    hint.ai_family = AF_INET;
-    hint.ai_socktype = SOCK_STREAM;
-    hint.ai_flags = AI_ADDRCONFIG | AI_PASSIVE;
-    getaddrinfo(nullptr, std::to_string(port_).c_str(), &hint, &result);
-    std::unique_ptr<addrinfo, decltype([](addrinfo *ai) { freeaddrinfo(ai); })> guard(result);
-    listen_fd_ = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-
-    int flag = true;
-    setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof flag);
-
-    bind(listen_fd_, result->ai_addr, result->ai_addrlen);
-    listen(listen_fd_, EVENT_CNT_);
-    set_nonblock(listen_fd_);
-}
-
 void WebServer::init_resource() noexcept {
     create_listen();
     epoll_fd_ = epoll_create(EVENT_CNT_);
