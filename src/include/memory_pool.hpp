@@ -57,10 +57,10 @@ public:
     T *allocate() {
         if (stk_.empty()) {
             if (!cur_chunk_.size_)
-                cur_chunk_ = {1}; // rvo
+                cur_chunk_ = Chunk{1}; // rvo
             else {
                 ls_.push_back(std::move(cur_chunk_));
-                cur_chunk_ = {ls_.back().size_ * INCREASEMENT};
+                cur_chunk_ = Chunk{ls_.back().size_ * INCREASEMENT};
             }
 
             auto &[pool, size, _] = cur_chunk_;

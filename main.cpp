@@ -1,12 +1,11 @@
 #include "src/include/container.hpp"
-#include "src/include/exception.h"
-#include "src/include/header.h"
-#include "src/include/http_conn.h"
 #include "src/include/http_request.h"
 #include "src/include/http_response.h"
 #include "src/include/json.h"
-#include "src/include/thread_pool.h"
 #include "src/include/webserver.h"
+#include <fcntl.h>
+#include <iostream>
+#include <random>
 
 using namespace std::literals::chrono_literals;
 
@@ -21,17 +20,6 @@ void test_dlist() {
         }
         std::cout << std::endl;
     }
-}
-
-void test_thread_pool() {
-    suzukaze::ThreadPool tp;
-
-    for (std::size_t i = 1; i <= 1000; i++)
-        tp.submit([] {
-            static int i = 0;
-            std::cout << i++ << std::endl;
-            std::this_thread::sleep_for(10ms);
-        });
 }
 
 void test_json() {
@@ -69,7 +57,7 @@ void test_webserver() {
     // std::default_random_engine e(time(0));
     // std::uniform_int_distribution<> d(1025, 65535);
 
-    suzukaze::WebServer server("0.0.0.0", 8080);
+    suzukaze::WebServer server("127.0.0.1", 8080);
     server.get("/", [](suzukaze::HttpRequest request, suzukaze::HttpResponse response) {
         response.html("judge.html");
     });

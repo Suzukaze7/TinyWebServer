@@ -1,5 +1,6 @@
 #include "include/iomultiplex.h"
 #include "include/config.h"
+#include <cassert>
 #include <memory>
 
 #if __linux
@@ -23,35 +24,35 @@ IOMultiplex::~IOMultiplex() {
 #endif
 }
 
-void IOMultiplex::add(const Descriptor &desc, bool in, bool one_shot) {
+void IOMultiplex::add(const DescriptorBase &fd, bool in, bool one_shot) {
 #if __linux
-    epoll_event event = {.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET, .data = {.fd = desc.fd_}};
+    epoll_event event = {.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET, .data = {.fd = fd.fd_}};
     if (one_shot) [[likely]]
         event.events |= EPOLLONESHOT;
-    epoll_ctl(fd_, EPOLL_CTL_MOD, desc.fd_, &event);
+    epoll_ctl(fd_, EPOLL_CTL_ADD, fd.fd_, &event);
 #elif _WIN32
 #endif
 }
 
-void IOMultiplex::mod(const Descriptor &desc, bool in) {
+void IOMultiplex::mod(const DescriptorBase &fd, bool in) {
 #if __linux
     epoll_event event = {.events = (in ? EPOLLIN : EPOLLOUT) | EPOLLET | EPOLLONESHOT,
-                         .data = {.fd = desc.fd_}};
-    epoll_ctl(fd_, EPOLL_CTL_MOD, desc.fd_, &event);
+                         .data = {.fd = fd.fd_}};
+    epoll_ctl(fd_, EPOLL_CTL_MOD, fd.fd_, &event);
 #elif _WIN32
 #endif
 }
 
-void IOMultiplex::del(const Descriptor &desc) {
+void IOMultiplex::del(const DescriptorBase &fd) {
 #if __linux
-    epoll_ctl(fd_, EPOLL_CTL_DEL, desc.fd_, nullptr);
+    epoll_ctl(fd_, EPOLL_CTL_DEL, fd.fd_, nullptr);
 #elif _WIN32
 #endif
 }
 
-IOMultiplex::Iterator IOMultiplex::begin() const { return Iterator{0}; }
+IOMultiplex::Iterator IOMultiplex::begin() noexcept { return Iterator{events_.get()}; }
 
-IOMultiplex::Iterator IOMultiplex::end() const { return Iterator{cnt_}; }
+IOMultiplex::Iterator IOMultiplex::end() noexcept { return Iterator{events_.get() + cnt_}; }
 
 IOMultiplex &IOMultiplex::operator()() {
 #if __linux
@@ -61,5 +62,4 @@ IOMultiplex &IOMultiplex::operator()() {
 
     return *this;
 }
-
 } // namespace suzukaze

@@ -1,13 +1,12 @@
 #pragma once
 
+#include "descriptor.h"
 #include "json.h"
-#include <bits/types/struct_iovec.h>
-#include <cstddef>
 #include <string>
 #include <unordered_map>
 
 namespace suzukaze {
-enum class StatusCode { OK, BAD_REQUEST, NOT_FOUND, NOT_ALLOWED, INTERAL_ERROR };
+enum class StatusCode { OK, BAD_REQUEST, NOT_FOUND, NOT_ALLOWED, INTERNAL_ERROR };
 
 struct ResponseInfo {
     StatusCode status_code_ = StatusCode::OK;
@@ -15,9 +14,8 @@ struct ResponseInfo {
     std::string body_;
     std::string send_header_;
     bool is_file_{};
-    void *file_ptr_;
-    std::size_t file_size_;
-    iovec vec_[2]{};
+    MMap mmap_;
+    IOVec<2> vec_;
 };
 
 class HttpResponse {

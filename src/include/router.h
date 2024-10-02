@@ -2,7 +2,6 @@
 #include "http_request.h"
 #include "http_response.h"
 #include <array>
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -18,14 +17,14 @@ class Router {
         std::array<Handler, 2> handlers_;
     };
 
-    std::shared_ptr<RouteNode> root_ = std::make_shared<RouteNode>();
+    std::shared_ptr<RouteNode> root_{std::make_shared<RouteNode>()};
 
 public:
     // Router(Router &&);
 
     void add_handler(RequestMethod method, std::string_view url, Handler handler);
 
-    Handler &get_handler(RequestMethod method, std::string_view url);
+    Handler &get_handler(RequestMethod method, std::string_view url) const;
 };
 
 class RootRouter : public Router {
@@ -34,13 +33,13 @@ class RootRouter : public Router {
     };
     Handler file_handler_{FileHandler{}};
 
-    std::filesystem::path static_dir_;
+    const std::string static_dir_;
 
 public:
-    explicit RootRouter(std::string static_dir) noexcept : static_dir_(std::move(static_dir)) {}
+    explicit RootRouter(std::string &&static_dir) noexcept : static_dir_(std::move(static_dir)) {}
 
-    Handler &get_handler(RequestMethod method, std::string_view url);
+    const Handler &get_handler(RequestMethod method, std::string_view url) const;
 
-    std::filesystem::path real_file_path(std::string_view url) noexcept;
+    std::string real_file_path(std::string_view url) const noexcept;
 };
 } // namespace suzukaze

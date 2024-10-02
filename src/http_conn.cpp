@@ -1,44 +1,32 @@
 #include "include/http_conn.h"
+#include "include/descriptor.h"
 #include "include/exception.h"
 #include "include/header.h"
 #include "include/http_response.h"
-#include "include/logger.hpp"
-#include "include/type.h"
-#include "include/utils.h"
-#include <cerrno>
-#include <cstdint>
-#include <cstring>
-#include <fcntl.h>
-#include <filesystem>
+#include <exception>
 #include <format>
 #include <iterator>
 #include <map>
-#include <ranges>
 #include <regex>
 #include <string>
 #include <string_view>
-#include <sys/mman.h>
-#include <sys/uio.h>
-#include <unistd.h>
 #include <utility>
 
 namespace suzukaze {
 using namespace std::string_view_literals;
 
 bool HttpConn::receive() {
-    static constexpr std::size_t LEN = 1500;
-    static char buf[LEN];
+    if (!fd_.read(req_.msg_))
+        return false;
 
-    ssize_t cnt;
-    while ((cnt = read(conn_fd_, buf, LEN)) > 0)
-        req_.msg_.append(buf, cnt);
-
-    if (errno != EAGAIN) {
-        logger_.debug("HttpConn::receive error: {}", strerror(errno));
-        return true;
-    }
-
-    return !cnt;
+    tool_->thread_pool_.submit([this, &iomultiplex = tool_->iomultiplex_] {
+        if (parse_request()) {
+            process();
+            iomultiplex.mod(fd_, false);
+        } else
+            iomultiplex.mod(fd_, true);
+    });
+    return true;
 }
 
 bool HttpConn::equal_ignore_case(std::string_view lhs, std::string_view rhs) noexcept {
@@ -60,7 +48,7 @@ bool HttpConn::getline() noexcept {
     return false;
 }
 
-ParseStatus HttpConn::parse_request_line() noexcept {
+HttpConn::ParseStatus HttpConn::parse_request_line() noexcept {
     req_.req_line_ = std::move(req_.line_);
     auto &line = req_.req_line_;
 
@@ -104,7 +92,7 @@ ParseStatus HttpConn::parse_request_line() noexcept {
     return ParseStatus::CONTINUE;
 }
 
-ParseStatus HttpConn::parse_header() noexcept {
+HttpConn::ParseStatus HttpConn::parse_header() noexcept {
     auto &line = req_.line_;
 
     if (line.empty()) {
@@ -137,14 +125,14 @@ ParseStatus HttpConn::parse_header() noexcept {
     return ParseStatus::CONTINUE;
 }
 
-ParseStatus HttpConn::parse_body() noexcept {
+HttpConn::ParseStatus HttpConn::parse_body() noexcept {
     req_.body_ += req_.line_;
     if (req_.body_.size() < req_.content_length_)
         return ParseStatus::NOT_FINISH;
     return ParseStatus::FINISH;
 }
 
-ParseStatus HttpConn::parse_request() noexcept {
+bool HttpConn::parse_request() noexcept {
     auto &parse_step = req_.parse_step_;
 
     while (getline() || parse_step == ParseStep::BODY) {
@@ -167,11 +155,11 @@ ParseStatus HttpConn::parse_request() noexcept {
         case ParseStatus::CONTINUE:
             break;
         default:
-            return parse_status;
+            return parse_status == ParseStatus::FINISH;
         }
     }
 
-    return ParseStatus::NOT_FINISH;
+    return false;
 }
 
 void HttpConn::process_status_line() noexcept {
@@ -196,78 +184,61 @@ void HttpConn::process_header() noexcept {
         std::format_to(it, "{}: {}\r\n", k, v);
     send_header += "\r\n";
 
-    resp_.vec_[0] = {send_header.data(), send_header.size()};
+    resp_.vec_.set(0, {send_header.data(), send_header.size()});
 }
 
-void HttpConn::process_body() noexcept {
+void HttpConn::process_body() {
     if (resp_.status_code_ == StatusCode::OK && !resp_.body_.empty()) {
         auto &vec = resp_.vec_;
         if (resp_.is_file_) {
-            auto &file_ptr = resp_.file_ptr_;
-            auto &file_size = resp_.file_size_;
-
-            auto file_path = router_.real_file_path(resp_.body_);
-            fd_t file_fd;
-            if ((file_fd = open(file_path.c_str(), O_RDONLY)) == -1 ||
-                (file_size = std::filesystem::file_size(file_path)) ==
-                    static_cast<std::uintmax_t>(-1) ||
-                (file_ptr = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, file_fd, 0)) ==
-                    MAP_FAILED) {
-                resp_.status_code_ = StatusCode::INTERAL_ERROR;
-                return;
-            }
-            close(file_fd);
-
-            vec[1] = {file_ptr, file_size};
-            resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(file_size));
+            auto file_path = config_->router_.real_file_path(resp_.body_);
+            resp_.mmap_ = MMap(file_path);
+            vec.set(1, resp_.mmap_);
+            resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(resp_.mmap_.size()));
         } else {
-            vec[1] = {resp_.body_.data(), resp_.body_.size()};
+            vec.set(1, {resp_.body_.data(), resp_.body_.size()});
             resp_.headers_.insert_or_assign(CONTENT_LENGTH, std::to_string(resp_.body_.size()));
         }
     }
 }
 
-void HttpConn::process() noexcept {
+void HttpConn::process() {
     if (resp_.status_code_ == StatusCode::OK)
-        try {
-            router_.get_handler(req_.method_, req_.url_)(req_, resp_);
-        } catch (UrlException &e) {
-            resp_.status_code_ = StatusCode::NOT_FOUND;
-        } catch (std::exception &e) {
-            resp_.status_code_ = StatusCode::INTERAL_ERROR;
-        }
+        config_->router_.get_handler(req_.method_, req_.url_)(req_, resp_);
+    try {
+    } catch (UrlException &e) {
+        resp_.status_code_ = StatusCode::NOT_FOUND;
+        tool_->logger_.info("not found: {}", e.what());
+    } catch (std::exception &e) {
+        resp_.status_code_ = StatusCode::INTERNAL_ERROR;
+        tool_->logger_.info("interal server error: {}", e.what());
+    }
 
     process_body();
+    try {
+    } catch (std::exception &e) {
+        resp_.status_code_ = StatusCode::INTERNAL_ERROR;
+        tool_->logger_.info("interal server error: {}", e.what());
+    }
+
     process_status_line();
     process_header();
 
     auto &[code, info] = STATUS_INFO.at(resp_.status_code_);
-    logger_.info("request: {} {} {} {}", host_, req_.req_line_, code, info);
+    tool_->logger_.info("request: {} {} {} {}", host_, req_.req_line_, code, info);
 }
 
-SendStatus HttpConn::send() noexcept {
-    auto &vec = resp_.vec_;
-    std::size_t idx = 0;
-
-    ssize_t cnt;
-    while ((vec[0].iov_len || vec[1].iov_len) && (cnt = writev(conn_fd_, vec + idx, 2 - idx)) > 0) {
-        for (auto i = idx; cnt; i++) {
-            auto len = std::min<std::size_t>(vec[i].iov_len, cnt);
-            vec[i].iov_base = static_cast<std::int8_t *>(vec[i].iov_base) + len;
-            vec[i].iov_len -= len;
-            cnt -= len;
-
-            if (!vec[i].iov_len)
-                idx++;
+bool HttpConn::send() {
+    if (fd_.write(resp_.vec_)) {
+        if (keep_alive_) {
+            clear();
+            tool_->iomultiplex_.mod(fd_, true);
         }
+        return keep_alive_;
     }
 
-    if (errno != EAGAIN) // SIGPIPE
-        return SendStatus::CLOSE;
-
-    if (vec[0].iov_len || vec[1].iov_len)
-        return SendStatus::NOT_FINISH;
-    return keep_alive_ ? SendStatus::KEEP_ALIVE : SendStatus::CLOSE;
+    tool_->iomultiplex_.mod(fd_, false);
+    return true;
 }
 
 void HttpConn::clear() noexcept { req_ = {}, resp_ = {}; }

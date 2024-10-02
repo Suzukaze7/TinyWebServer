@@ -425,10 +425,22 @@ A: 手动指定的时候(例如：`#pragma pack (n)`)。另外有些 64 位平�
 - 类重载默认 `static`
 - `delete` 指向子类的基类指针，没有虚析构是 ub，反之 `delete` 可以找到正确的 `operator delete`
 
+## gdb
+
+#### 多线程调试相关
+
+想 gdb 单步运行看一下 `process` 中哪里导致 500，但是 gdb 一运行就段错误，起初以为是 epoll 事件的修改在 `process` 中导致多线程冲突，改了后仍然有问题。于是怀疑是 gdb 的问题。
+
+- `info threads`：查看所有线程
+- `thread $n`：切换线程
+- `set scheduler-locking on\off`：开启\关闭调度锁，禁止\允许自动线程切换；如果程序在多线程环境中 GDB 会自动在各个线程之间切换，调试过程中可能会跳到其他线程
+```
+
 ## 难点
 
 - `logger` 与 `router` 在 `HttpConn` 类中需要使用，又不想设计成单例，于是定义成 `HttpConn` 类的静态成员变量，又由于 `WebServer` 类中也要使用，于是将 `WebServer` 作为 `HttpConn` 的友元。(补充)这样设计不好，使得在使用上有限制，整个程序只能有一个 `WebServer` 类，但是给 `HttpConn` 都加个成员变量，开销感觉太大了？
 - `parse_request` 返回值应该用 `StatusCode` 还是独自定义状态，用 `StatusCode` 会导致枚举有不属于正常状态码该有的状态，独自定义在 `process` 中又会导致状态对应很难看，所以决定返回 `pair`
+- 将系统调用相关抽象出来，对于文件描述符，需要有一个不 raii 的基类来代表标准输入等。为了让 `HttpConn` 更加 raii，于是将相关工具放到一个工具类中，方便传递。
 
 ## todo
 

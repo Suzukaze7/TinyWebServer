@@ -1,15 +1,16 @@
 #pragma once
 
+#include "iomultiplex.h"
 #include "logger.hpp"
-#include "router.h"
 #include "thread_pool.h"
 #include "timer_wheel.h"
 
 namespace suzukaze {
-struct Catalog {
+struct Tool {
+    std::size_t cur_conn_{};
     Logger logger_;
-    RootRouter router_;
     TimerWheel timer_wheel_;
     ThreadPool thread_pool_;
+    IOMultiplex iomultiplex_;
 };
 } // namespace suzukaze

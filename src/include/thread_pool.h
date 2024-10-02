@@ -1,13 +1,11 @@
 #pragma once
 #include "container.hpp"
-#include "memory_pool.hpp"
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <utility>
 #include <vector>
 
 namespace suzukaze {

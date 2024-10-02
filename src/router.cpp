@@ -1,7 +1,5 @@
 #include "include/router.h"
 #include "include/exception.h"
-#include "include/utils.h"
-#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -15,7 +13,7 @@ void Router::add_handler(RequestMethod method, std::string_view url, Handler han
         throw UrlException("url should start with '/' and not end with '/'");
 
     std::filesystem::path path(url.substr(1));
-    auto type_idx = to_underlying(method);
+    auto type_idx = static_cast<std::underlying_type_t<decltype(method)>>(method);
     auto ptr = root_;
     for (auto &step : path)
         ptr = ptr->next_.try_emplace(step, std::make_shared<RouteNode>()).first->second;
@@ -26,9 +24,9 @@ void Router::add_handler(RequestMethod method, std::string_view url, Handler han
     ptr->handlers_[type_idx] = std::move(handler);
 }
 
-Handler &Router::get_handler(RequestMethod method, std::string_view url) {
+Handler &Router::get_handler(RequestMethod method, std::string_view url) const {
     std::filesystem::path path(url.substr(1));
-    auto type_idx = to_underlying(method);
+    auto type_idx = static_cast<std::underlying_type_t<decltype(method)>>(method);
     auto ptr = root_;
     for (auto &step : path) {
         if (!ptr->next_.contains(step)) {
@@ -44,7 +42,7 @@ Handler &Router::get_handler(RequestMethod method, std::string_view url) {
     return ptr->handlers_[type_idx];
 }
 
-Handler &RootRouter::get_handler(RequestMethod method, std::string_view url) {
+const Handler &RootRouter::get_handler(RequestMethod method, std::string_view url) const {
     try {
         return Router::get_handler(method, url);
     } catch (UrlException &e) {
@@ -54,8 +52,8 @@ Handler &RootRouter::get_handler(RequestMethod method, std::string_view url) {
     }
 }
 
-std::filesystem::path RootRouter::real_file_path(std::string_view url) noexcept {
-    return static_dir_ / url;
+std::string RootRouter::real_file_path(std::string_view url) const noexcept {
+    return std::string(static_dir_) += url;
 }
 
 } // namespace suzukaze
